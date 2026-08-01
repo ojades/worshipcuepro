@@ -1,0 +1,124 @@
+<script lang="ts">
+    import FolderSync from "@lucide/svelte/icons/folder-sync";
+    import Monitor from "@lucide/svelte/icons/monitor";
+    import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
+    import Library from "@lucide/svelte/icons/library";
+    import Network from "@lucide/svelte/icons/network";
+    import Info from "@lucide/svelte/icons/info";
+    import BookOpen from "@lucide/svelte/icons/book-open"; // Added BookOpen
+
+    // Import the decoupled components
+    import WorkspaceSettings from "$lib/components/layout/settings/WorkspaceSettings.svelte";
+    import BibleSettings from "$lib/components/layout/settings/BibleSettings.svelte";
+
+    type Category =
+        | "workspace"
+        | "bibles"
+        | "display"
+        | "defaults"
+        | "media"
+        | "integrations"
+        | "about";
+
+    let activeCategory = $state<Category>("workspace");
+
+    const menuItems: { id: Category; label: string; icon: any }[] = [
+        { id: "workspace", label: "Workspace & Sync", icon: FolderSync },
+        { id: "bibles", label: "Bible Translations", icon: BookOpen }, // New Item
+        { id: "display", label: "Display Output", icon: Monitor },
+        {
+            id: "defaults",
+            label: "Presentation Defaults",
+            icon: SlidersHorizontal,
+        },
+        { id: "media", label: "Media Library", icon: Library },
+        { id: "integrations", label: "Integrations", icon: Network },
+        { id: "about", label: "About", icon: Info },
+    ];
+</script>
+
+<svelte:head>
+    <title>WorshipCuePro - Settings</title>
+</svelte:head>
+
+<div
+    class="flex-1 flex h-full overflow-hidden bg-background font-sans text-foreground"
+>
+    <!-- Left Pane - Settings Menu -->
+    <div class="w-1/4 border-r border-border bg-card/30 flex flex-col">
+        <div class="p-6 pb-2">
+            <h2
+                class="text-xs font-bold tracking-wider text-muted-foreground uppercase"
+            >
+                Settings
+            </h2>
+        </div>
+
+        <nav class="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
+            {#each menuItems as item}
+                <button
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer
+                    {activeCategory === item.id
+                        ? 'bg-neon-violet/10 text-neon-violet shadow-[0_0_10px_rgba(147,51,234,0.05)]'
+                        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+                    onclick={() => (activeCategory = item.id)}
+                >
+                    <item.icon
+                        size={18}
+                        strokeWidth={activeCategory === item.id ? 2 : 1.5}
+                    />
+                    {item.label}
+                </button>
+            {/each}
+        </nav>
+    </div>
+
+    <!-- Right Pane - Configuration Area -->
+    <div class="flex-1 overflow-y-auto p-10 bg-background relative h-full">
+        {#if activeCategory === "workspace"}
+            <WorkspaceSettings />
+        {:else if activeCategory === "bibles"}
+            <BibleSettings />
+        {:else if activeCategory === "display"}
+            <div class="max-w-2xl animate-in fade-in duration-300">
+                <h1 class="text-2xl font-bold text-foreground mb-2">
+                    Display Output
+                </h1>
+                <p class="text-sm text-muted-foreground mb-6">
+                    Manage how presentations are routed to external hardware.
+                </p>
+                <div
+                    class="p-8 border border-dashed border-border rounded-xl text-center text-muted-foreground"
+                >
+                    Moved to Header Menu (Top Bar)
+                </div>
+            </div>
+        {:else if activeCategory === "about"}
+            <div class="max-w-2xl animate-in fade-in duration-300 space-y-4">
+                <h1 class="text-2xl font-bold text-foreground mb-2">About</h1>
+                <div class="bg-card border border-border rounded-xl p-6">
+                    <h2 class="text-lg font-bold text-neon-violet">
+                        WorshipCuePro
+                    </h2>
+                    <p class="text-sm text-muted-foreground mt-1">
+                        Version 0.1.0-alpha
+                    </p>
+                    <p class="text-sm text-muted-foreground mt-4">
+                        Offline-first presentation and media delivery system
+                        built with Tauri and SvelteKit.
+                    </p>
+                </div>
+            </div>
+        {:else}
+            <!-- Placeholders for other tabs -->
+            <div class="max-w-2xl animate-in fade-in duration-300">
+                <h1 class="text-2xl font-bold text-foreground mb-2 capitalize">
+                    {activeCategory.replace("-", " ")}
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    Settings configuration coming soon...
+                </p>
+            </div>
+        {/if}
+    </div>
+</div>

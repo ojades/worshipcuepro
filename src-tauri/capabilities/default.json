@@ -1,0 +1,34 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main", "projector_window", "stage_window"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "sql:default",
+    "dialog:default",
+    "sql:allow-execute",
+    "dialog:allow-open",
+    "fs:default",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-remove",
+    {
+      "identifier": "fs:scope",
+      "allow": ["$DOCUMENT/**", "$HOME/**"]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-copy-file",
+      "allow": [{ "path": "**" }]
+    }
+  ]
+}

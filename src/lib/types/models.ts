@@ -1,0 +1,45 @@
+// src/lib/types/models.ts
+export interface PresentationPayload {
+  liveText: string;
+  nextText: string;
+  liveBackground: { url: string; type: string } | null;
+  isBlackout: boolean;
+  isTextCleared: boolean;
+  alignment?: "top" | "middle" | "bottom";
+  liveReference?: string | null;
+  referencePosition?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  liveMedia?: { type: "image" | "video"; url: string };
+  stageTextScale?: number;
+  textScale?: number;
+}
+
+export interface Slide {
+  id: string;
+  text: string;
+  notes?: string;
+  backgroundId?: string;
+}
+
+export interface Section {
+  id: string;
+  type?: string;
+  title: string; // e.g., "Verse 1", "Chorus", "Main Point"
+  color?: string; // Useful for color-coding buttons in the Operator view
+  slides: Slide[];
+}
+
+export interface Cue {
+  id: string;
+  title: string; // e.g., "How Great Is Our God", "Romans 8:28"
+  type: "song" | "scripture" | "announcement" | "bible";
+  sections: Section[];
+  playlist_item_id?: string;
+  raw_lyrics?: string;
+}
+
+export interface Playlist {
+  id: string;
+  name: string; // e.g., "Sunday Morning Worship"
+  date?: Date | string;
+  cues: Cue[];
+}
