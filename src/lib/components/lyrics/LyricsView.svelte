@@ -9,6 +9,7 @@
         Settings2,
         Trash2,
         ListPlus,
+        AlertCircle,
     } from "@lucide/svelte";
     import type { SongCue } from "../../../routes/operator/lyrics/+page.svelte";
     import Button from "$lib/components/ui/Button.svelte";
@@ -29,6 +30,7 @@
     }>();
 
     let isEditMode = $state(false);
+    let showDeleteConfirm = $state(false);
 
     // Form States
     let editTitle = $state("");
@@ -40,6 +42,7 @@
     $effect(() => {
         if (song) {
             isEditMode = forceEditMode;
+            showDeleteConfirm = false; // Reset delete confirmation on song change
             if (forceEditMode) initEditForm();
             else {
                 linesPerSlide = song.lines_per_slide || 0;
@@ -59,6 +62,7 @@
         editArtist = song.artist || "";
         editLyrics = song.raw_lyrics || "";
         linesPerSlide = song.lines_per_slide || 0;
+        showDeleteConfirm = false;
     }
 
     function handleEditClick() {
@@ -77,17 +81,13 @@
         isEditMode = false;
     }
 
-    async function handleDelete() {
+    async function confirmDelete() {
         if (!song) return;
-        const confirmed = confirm(
-            `Are you sure you want to delete "${song.title}"?`,
-        );
-        if (confirmed) {
-            const success = await songsState.delete(song.id);
-            if (success) {
-                isEditMode = false;
-                onDelete();
-            }
+        const success = await songsState.delete(song.id);
+        if (success) {
+            isEditMode = false;
+            showDeleteConfirm = false;
+            onDelete();
         }
     }
 
@@ -165,7 +165,8 @@
                             icon={Edit2}
                             onclick={handleEditClick}
                         >
-                            Edit Song
+                            <Edit2 size={16} class="text-foreground" />
+                            Edit
                         </Button>
                     {/if}
                 </div>
@@ -240,15 +241,38 @@
                     </div>
 
                     <div class="flex items-center gap-3">
-                        <Button
-                            variant="danger"
-                            icon={Trash2}
-                            onclick={handleDelete}>Delete</Button
-                        >
+                        <!-- SLEEK INLINE DELETE CONFIRMATION -->
+                        {#if showDeleteConfirm}
+                            <div
+                                class="flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-200 bg-red-950/30 border border-red-900/50 rounded-lg p-1 pr-2"
+                            >
+                                <Button
+                                    variant="ghost"
+                                    onclick={() => (showDeleteConfirm = false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    variant="danger"
+                                    onclick={confirmDelete}
+                                >
+                                    Confirm
+                                </Button>
+                            </div>
+                        {:else}
+                            <Button
+                                variant="danger"
+                                icon={Trash2}
+                                onclick={() => (showDeleteConfirm = true)}
+                            >
+                                Delete
+                            </Button>
+                        {/if}
+
                         <Button
                             variant="primary"
                             icon={Save}
-                            onclick={handleSave}>Save Song</Button
+                            onclick={handleSave}>Save</Button
                         >
                     </div>
                 </div>
@@ -256,7 +280,7 @@
                 <textarea
                     bind:value={editLyrics}
                     placeholder="Paste or type lyrics here... Use 'Verse 1', 'Chorus', etc. to create sections."
-                    class="flex-1 bg-background border border-border text-foreground text-sm font-mono px-4 py-4 rounded-xl focus:border-neon-violet focus:ring-1 focus:ring-neon-violet outline-none resize-none"
+                    class="flex-1 bg-background border border-border text-foreground text-xl leading-relaxed font-mono px-6 py-6 rounded-xl focus:border-neon-violet focus:ring-1 focus:ring-neon-violet outline-none resize-none"
                 ></textarea>
 
                 <div

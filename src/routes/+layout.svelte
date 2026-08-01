@@ -13,6 +13,7 @@
     import { shootState } from "$lib/state/shoot.svelte";
     import GlobalShortcuts from "$lib/components/layout/GlobalShortcuts.svelte";
     import OnboardingSetup from "$lib/components/layout/OnboardingSetup.svelte";
+    import { Settings } from "@lucide/svelte";
 
     let { children } = $props();
     let isDbReady = $state(false);
@@ -20,6 +21,7 @@
 
     onMount(async () => {
         const savedWorkspace = settingsState.config.workspacePath;
+        console.log("Workspace path:", savedWorkspace);
 
         if (savedWorkspace) {
             isDbReady = await initDB(settingsState.config.workspacePath);
@@ -32,7 +34,7 @@
                     shootState.loadAll(),
                 ]);
 
-                // Close splashscreen only AFTER everything is loaded
+                // Close splashscreen AFTER everything is loaded
                 setTimeout(async () => {
                     try {
                         await invoke("close_splashscreen");
@@ -43,11 +45,21 @@
             }
         } else {
             needsSetup = true;
+            console.log("No workspace path set, showing onboarding setup.");
+
+            // ADD THIS: Close splashscreen so the user can see the setup UI!
+            setTimeout(async () => {
+                try {
+                    await invoke("close_splashscreen");
+                } catch (e) {
+                    console.error("Failed to close splash screen:", e);
+                }
+            }, 500);
         }
     });
 
     async function handleWorkspaceSelected(newPath: string) {
-        localStorage.setItem("worshipcue_workspace_path", newPath);
+        settingsState.update({ workspacePath: newPath });
         needsSetup = false;
         isDbReady = await initDB(newPath);
     }

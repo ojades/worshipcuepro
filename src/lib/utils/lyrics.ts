@@ -45,25 +45,39 @@ export function parseLyrics(
     });
   }
 
+  // Regex breakdown:
+  // ^\[?         -> Must start at the beginning of the line, optional '['
+  // (verse|chorus|bridge|pre-chorus|pre chorus) -> The exact keywords
+  // \s*          -> Optional whitespace
+  // ([0-9]+)?    -> Optional numbers (e.g., Verse 1, Verse 2)
+  // \]?          -> Optional closing ']'
+  // :?           -> Optional colon (e.g., Chorus:)
+  // $            -> Must be the end of the line (prevents "Bridge is falling down")
+  const headerRegex =
+    /^\[?(verse|chorus|bridge|pre-chorus|pre chorus|vamp)\s*([0-9]+)?\]?:?$/i;
+
   lines.forEach((line) => {
-    const trimmed = line.trim().toLowerCase();
-    if (
-      ["verse", "chorus", "bridge", "pre-chorus"].some((t) =>
-        trimmed.includes(t),
-      )
-    ) {
+    const trimmed = line.trim();
+    const match = trimmed.match(headerRegex);
+
+    if (match) {
       pushSection();
-      if (trimmed.includes("verse")) {
+
+      // match[1] contains the actual keyword found (verse, chorus, etc.)
+      const keyword = match[1].toLowerCase();
+
+      if (keyword === "verse") {
         sectionType = "verse";
         sectionTitle = "Verse";
         verseNum++;
-      } else if (trimmed.includes("chorus")) {
+      } else if (keyword === "chorus") {
         sectionType = "chorus";
         sectionTitle = "Chorus";
-      } else if (trimmed.includes("bridge")) {
+      } else if (keyword === "bridge") {
         sectionType = "bridge";
         sectionTitle = "Bridge";
-      } else if (trimmed.includes("pre-chorus")) {
+      } else if (keyword.includes("pre")) {
+        // Catches both "pre-chorus" and "pre chorus"
         sectionType = "pre-chorus";
         sectionTitle = "Pre-Chorus";
       }

@@ -69,7 +69,7 @@
     class="flex-1 flex min-h-0 bg-background rounded-tl-2xl overflow-hidden border-t border-l border-border"
 >
     <!-- Left Pane -->
-    <div class="w-80 lg:w-96 flex-shrink-0 border-r border-border h-full">
+    <div class="w-80 lg:w-88 flex-shrink-0 border-r border-border h-full">
         <SongLibrary
             songs={songList}
             {selectedSongId}

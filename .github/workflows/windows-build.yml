@@ -1,11 +1,11 @@
-name: Build Windows Installer
+name: Build Windows Release
 
 on:
   push:
     branches:
-      - main
-  # This allows you to trigger the build manually from the GitHub website
-  workflow_dispatch:
+      - master
+    tags:
+      - "v*" # Triggers on version tags
 
 jobs:
   build-windows:
@@ -21,29 +21,27 @@ jobs:
           node-version: 20
           cache: "yarn"
 
-      - name: Setup Rust
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
 
-      # Caches Rust dependencies to speed up future builds
-      - name: Rust Cache
+      - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "src-tauri -> target"
+          workspaces: "./src-tauri -> target"
 
       - name: Install Frontend Dependencies
         run: yarn install
 
       - name: Build Tauri App
-        run: yarn tauri build
-
-      - name: Upload Windows Installer
-        uses: actions/upload-artifact@v4
+        uses: tauri-apps/tauri-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BIBLE_API_KEY: ${{ secrets.BIBLE_API_KEY }}
+          YOUVERSION_API_KEY: ${{ secrets.YOUVERSION_API_KEY }}
         with:
-          name: WorshipCuePro-Windows-Installer
-          # Grabs both the .msi and the setup .exe files
-          path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: error
+          # The action automatically replaces __VERSION__ with the version from your tauri.conf.json
+          tagName: app-v__VERSION__
+          releaseName: "WorshipCuePro v__VERSION__ Win"
+          releaseBody: "Automated Windows release."
+          releaseDraft: true
+          prerelease: false
