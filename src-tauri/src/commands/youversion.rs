@@ -4,7 +4,7 @@ use serde_json::Value;
 use tauri::State;
 
 // Pulls the key at compile-time using the environment variable you defined in .cargo/config.toml
-const YOUVERSION_API_KEY: Option<&str> = option_env!("YOUVERSE_API_KEY");
+const YOUVERSION_API_KEY: Option<&str> = option_env!("YOUVERSION_API_KEY");
 const YV_API_BASE: &str = "https://api.youversion.com/v1";
 
 // Helper function to handle standard fetch requests securely

@@ -37,7 +37,7 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BIBLE_API_KEY: ${{ secrets.BIBLE_API_KEY }}
+          API_BIBLE_KEY: ${{ secrets.BIBLE_API_KEY }}
           YOUVERSION_API_KEY: ${{ secrets.YOUVERSION_API_KEY }}
         with:
           # The action automatically replaces __VERSION__ with the version from your tauri.conf.json
