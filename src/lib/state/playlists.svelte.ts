@@ -4,6 +4,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { presentation } from "./presentation.svelte";
 import { shootState } from "./shoot.svelte";
 import { parseLyrics } from "$lib/utils/lyrics";
+import { settingsState } from "./settings.svelte";
 
 export interface PlaylistMeta {
   id: string;

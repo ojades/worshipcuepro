@@ -1,43 +1,89 @@
 <!-- src/routes/stage/+page.svelte -->
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
     import type { PresentationPayload } from "$lib/types/models";
     import StageDisplay from "$lib/components/layout/display/StageDisplay.svelte";
 
     // --- State ---
-    let presentationPayload = $state<PresentationPayload>({});
+    let presentationPayload = $state<PresentationPayload | null>(null);
     let controlsPayload = $state<any>({});
 
-    // Combine them into a single reactive display object
-    let displayPayload = $derived({
+    // Combine into a single reactive display object
+    let displayPayload: PresentationPayload = $derived({
         ...presentationPayload,
         ...controlsPayload,
     });
 
-    let unlistenPresentation: UnlistenFn;
-    let unlistenControls: UnlistenFn;
+    let unlistenPresentation: () => void;
+    let unlistenControls: () => void;
+    let socket: WebSocket | null = null;
+
+    // Helper to check if running inside Tauri webview
+    const isTauri = () =>
+        typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
     onMount(async () => {
-        unlistenPresentation = await listen<PresentationPayload>(
-            "presentation-update",
-            (event) => {
-                presentationPayload = event.payload;
-            },
-        );
+        if (isTauri()) {
+            // --- NATIVE TAURI MODE ---
+            const { listen, emit } = await import("@tauri-apps/api/event");
 
-        unlistenControls = await listen("controls-update", (event: any) => {
-            controlsPayload = event.payload;
-        });
+            unlistenPresentation = await listen<PresentationPayload>(
+                "presentation-update",
+                (event) => {
+                    presentationPayload = event.payload;
+                },
+            );
 
-        // Request initial states on boot
-        await emit("request-presentation-state");
-        await emit("request-controls-state");
+            unlistenControls = await listen("controls-update", (event: any) => {
+                controlsPayload = event.payload;
+            });
+
+            await emit("request-presentation-state");
+            await emit("request-controls-state");
+        } else {
+            // --- REMOTE WEB BROWSER MODE ---
+            connectWebSocket();
+        }
     });
+
+    function connectWebSocket() {
+        // Automatically connects to ws://<current-host-ip>:8080/ws
+        const wsProtocol =
+            window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+
+        socket = new WebSocket(wsUrl);
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                // Expecting incoming WebSocket payloads to specify an event type
+                if (data.type === "presentation-update") {
+                    presentationPayload = data.payload;
+                } else if (data.type === "controls-update") {
+                    controlsPayload = data.payload;
+                } else if (data.text) {
+                    // Fallback support if receiving simple CueData from OBS broadcasts
+                    presentationPayload = data;
+                }
+            } catch (err) {
+                console.error("Failed to parse WebSocket message", err);
+            }
+        };
+
+        socket.onclose = () => {
+            presentationPayload = null;
+            controlsPayload = {};
+            // Reconnect automatically if Wi-Fi drops temporarily
+            setTimeout(connectWebSocket, 3000);
+        };
+    }
 
     onDestroy(() => {
         if (unlistenPresentation) unlistenPresentation();
         if (unlistenControls) unlistenControls();
+        if (socket) socket.close();
     });
 </script>
 

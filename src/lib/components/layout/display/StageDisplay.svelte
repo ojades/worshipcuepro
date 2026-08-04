@@ -12,14 +12,15 @@
 
         serviceTargetTimestamp?: number | null;
         showServiceTimerOnStage?: boolean;
-        stageTextScale?: number;
 
         speakerTargetTimestamp?: number | null;
         speakerPausedRemainingMs?: number | null;
         showSpeakerTimerOnStage?: boolean;
     };
 
-    let { display } = $props<{ display: StagePayload }>();
+    let { display }: { display: StagePayload } = $props<{
+        display: StagePayload;
+    }>();
 
     let clockInterval: ReturnType<typeof setInterval>;
 
@@ -101,18 +102,25 @@
 <div
     class="stage-container absolute inset-0 overflow-hidden bg-black text-white flex flex-col font-sans transition-opacity duration-300 select-none"
     class:opacity-0={display.isBlackout}
-    style="--stage-scale: {display.stageTextScale ?? 1};"
+    style="--stage-scale: {display.stage?.textScale ?? 1};"
 >
     <!-- Header / Info Bar -->
     <header
         class="cq-header border-b border-zinc-800 flex items-center justify-between cq-px bg-zinc-950 flex-shrink-0 z-20"
     >
-        <div class="flex items-center cq-gap">
+        <div class="flex items-center justify-between cq-gap">
             <span
                 class="cq-badge bg-red-600/20 text-red-500 font-bold tracking-widest uppercase rounded-sm border border-red-600/30"
             >
                 Live
             </span>
+            {#if display.liveReference}
+                <span
+                    class=" cq-label-next-right text-yellow-300 font-black drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-widest z-10"
+                >
+                    {display.liveReference}
+                </span>
+            {/if}
         </div>
 
         <div class="absolute right-[4cqw] z-40 flex items-center gap-[4cqw]">
@@ -216,7 +224,6 @@
                     <span
                         class="text-zinc-800 font-mono tracking-widest cq-text-empty font-bold uppercase relative z-10"
                     >
-                        [ No Active Content ]
                     </span>
                 {/if}
             </div>
@@ -227,14 +234,6 @@
             <div
                 class="flex-[2] cq-p flex flex-col relative bg-zinc-900/50 animate-in slide-in-from-bottom-4 z-20"
             >
-                {#if display.liveReference}
-                    <span
-                        class="absolute cq-label-next-right text-yellow-300 font-black drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-widest z-10"
-                    >
-                        {display.liveReference}
-                    </span>
-                {/if}
-
                 <div
                     class="next-text-container flex-1 w-full flex items-center justify-center px-8"
                 >
@@ -284,7 +283,7 @@
         text-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     }
     .cq-label-next-right {
-        font-size: 2.8cqw;
+        font-size: 4cqw;
         top: 2cqh;
         right: 3cqw;
     }
@@ -305,6 +304,6 @@
         font-size: calc(min(4cqw, 11cqh) * var(--stage-scale, 1));
     }
     .cq-text-next {
-        font-size: calc(min(3.5cqw, 25cqh) * var(--stage-scale, 1));
+        font-size: calc(min(10cqw, 40cqh) * var(--stage-scale, 2));
     }
 </style>

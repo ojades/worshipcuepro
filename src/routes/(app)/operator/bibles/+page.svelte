@@ -12,6 +12,7 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import { goto } from "$app/navigation";
+    import { chunkProse } from "$lib/utils/helper";
 
     // Local UI State
     let smartQuery = $state("");
@@ -165,29 +166,6 @@
                 pendingVerseToFire = parsedQuery.verse;
             }
         }
-    }
-
-    // Helper: Break continuous prose into slides based on lines per slide
-    function chunkProse(text: string, maxLines: number): string[] {
-        if (!maxLines || maxLines <= 0) return [text];
-        const maxChars = maxLines * 50;
-        if (text.length <= maxChars) return [text];
-
-        const words = text.split(" ");
-        const chunks: string[] = [];
-        let currentChunk = "";
-
-        for (const word of words) {
-            if (currentChunk.length + word.length + 1 > maxChars) {
-                chunks.push(currentChunk.trim());
-                currentChunk = word + " ";
-            } else {
-                currentChunk += word + " ";
-            }
-        }
-        if (currentChunk) chunks.push(currentChunk.trim());
-
-        return chunks;
     }
 
     async function sendVerseToProjector(verse: any) {

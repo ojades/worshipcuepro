@@ -1,9 +1,10 @@
 // src/lib/state/songs.svelte.ts
 import { getDB } from "$lib/db";
 import { systemState } from "$lib/state/system.svelte";
+import type { SongCue } from "$lib/types/models";
 
 class SongsState {
-  songs = $state([]);
+  songs = $state<SongCue[]>([]);
 
   async load() {
     try {

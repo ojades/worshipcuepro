@@ -1,24 +1,26 @@
 // src/lib/state/settings.svelte.ts
 import { browser } from "$app/environment";
-
-export interface AppSettings {
-  workspacePath: string | null;
-  projectorAlignment: "top" | "middle" | "bottom";
-  apiBibleKey: string;
-  youVersionToken: string;
-  linesPerSlide: number;
-  enabledBibles: string[];
-  textScale?: number;
-  stageTextScale?: number;
-}
+import type { AppSettings } from "$lib/types/models";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   workspacePath: null,
-  projectorAlignment: "middle",
-  apiBibleKey: "t6-Nc3fL1BAcuJrr-_yDc",
-  youVersionToken: "hW9IGDSGcXDSZgs1e9dFBORdHxOAGtM8IRIVmEujmMsY5VXA",
-  linesPerSlide: 2,
-  enabledBibles: ["NLT", "KJV", "ASV", "MSG", "engKJV"],
+  enabledBibles: [
+    "ab_de4e12af7f28f599-01",
+    "ab_d6e14a625393b4da-01",
+    "ab_06125adad2d5898a-01",
+    "ab_6f11a7de016f942e-01",
+    "ab_63097d2a0a2f7db3-01",
+  ],
+  projector: {
+    textScale: 1,
+    textVAlign: "top",
+    referencePosition: "bottom-right",
+  },
+  stage: {
+    textScale: 1,
+    textVAlign: "middle",
+    referencePosition: "bottom-right",
+  },
 };
 
 class SettingsState {
@@ -36,36 +38,9 @@ class SettingsState {
       if (stored) {
         const parsed = JSON.parse(stored);
         this.config = { ...DEFAULT_SETTINGS, ...parsed };
-      } else {
-        // First-time run with the new system: migrate old data if it exists
-        this.migrateOldSettings();
       }
     } catch (e) {
       console.error("Failed to load settings:", e);
-    }
-  }
-
-  private migrateOldSettings() {
-    if (!browser) return;
-
-    const oldWorkspace = localStorage.getItem("wcp_workspace_path");
-    const oldAlignment = localStorage.getItem("projector_alignment");
-
-    if (oldWorkspace || oldAlignment) {
-      this.config.workspacePath = oldWorkspace;
-      if (
-        oldAlignment === "top" ||
-        oldAlignment === "middle" ||
-        oldAlignment === "bottom"
-      ) {
-        this.config.projectorAlignment = oldAlignment;
-      }
-
-      this.saveSettings();
-
-      // Clean up legacy keys
-      localStorage.removeItem("wcp_workspace_path");
-      localStorage.removeItem("projector_alignment");
     }
   }
 

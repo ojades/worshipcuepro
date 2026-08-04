@@ -28,18 +28,22 @@ async fn close_splashscreen(app: tauri::AppHandle) {
     }
 }
 
-// Command for Svelte to send a cue to OBS
+// Command for Svelte to send a cue to OBS/Remote Display
 #[tauri::command]
-async fn broadcast_to_obs(
-    cue_data: obs::CueData,
+async fn broadcast_payload(
+    event_type: String,
+    payload: serde_json::Value,
     state: tauri::State<'_, ServerState>,
 ) -> Result<(), String> {
-    // Serialize the Rust struct into a JSON string
-    let payload = serde_json::to_string(&cue_data).map_err(|e| e.to_string())?;
+    let message = serde_json::json!({
+        "type": event_type,
+        "payload": payload
+    });
 
-    // Broadcast it to all connected OBS WebSockets.
-    // We ignore errors here because an error just means no clients are currently connected.
-    let _ = state.tx.send(payload);
+    let json_string = serde_json::to_string(&message).map_err(|e| e.to_string())?;
+
+    // Broadcast over Axum WebSocket channel
+    let _ = state.tx.send(json_string);
 
     Ok(())
 }
@@ -48,6 +52,14 @@ async fn broadcast_to_obs(
 pub fn run() {
     let http_client = Client::new();
     tauri::Builder::default()
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { .. } => {
+                if window.label() == "main" {
+                    window.app_handle().exit(0);
+                }
+            }
+            _ => {}
+        })
         .manage(ApiHttpClient(http_client))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -83,7 +95,8 @@ pub fn run() {
             commands::display::close_stage,
             commands::display::is_stage_open,
             commands::display::get_displays,
-            broadcast_to_obs,
+            commands::network::get_local_ip,
+            broadcast_payload,
             get_bible_versions,
             get_bible_books,
             get_bible_chapters,

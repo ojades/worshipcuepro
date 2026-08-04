@@ -5,17 +5,22 @@ export interface PresentationPayload {
   liveBackground: { url: string; type: string } | null;
   isBlackout: boolean;
   isTextCleared: boolean;
-  alignment?: "top" | "middle" | "bottom";
   liveReference?: string | null;
-  referencePosition?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
-  liveMedia?: { type: "image" | "video"; url: string };
-  stageTextScale?: number;
-  textScale?: number;
+  linesPerSlide?: number;
+  liveMedia?: MediaType;
+  projector: DisplayConfig | null;
+  stage: DisplayConfig | null;
+}
+
+export interface MediaType {
+  type: "image" | "video";
+  url: string;
 }
 
 export interface Slide {
   id: string;
   text: string;
+  media?: MediaType;
   notes?: string;
   backgroundId?: string;
 }
@@ -43,3 +48,23 @@ export interface Playlist {
   date?: Date | string;
   cues: Cue[];
 }
+export interface DisplayConfig {
+  textScale?: number;
+  textVAlign?: "top" | "middle" | "bottom";
+  referencePosition?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+}
+
+export interface AppSettings {
+  workspacePath: string | null;
+  enabledBibles: string[];
+  linesPerSlide?: number;
+  projector?: DisplayConfig;
+  stage?: DisplayConfig;
+}
+
+export type SongCue = Cue & {
+  key?: string;
+  tempo?: number;
+  ccli?: string;
+  raw_lyrics?: string;
+};

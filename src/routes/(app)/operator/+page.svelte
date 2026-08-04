@@ -205,7 +205,7 @@
                             disabled={isQuickEditing}
                             title="Format lines per slide"
                         >
-                            <option value={0}>Auto</option>
+                            <option value={0}>Default</option>
                             <option value={2}>2 Lines</option>
                             <option value={4}>4 Lines</option>
                             <option value={6}>6 Lines</option>

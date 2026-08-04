@@ -17,8 +17,6 @@
     let reconnectTimer: number;
 
     function connectWebSocket() {
-        // We dynamically get the hostname.
-        // If OBS is accessing http://192.168.1.50:8080, it will connect to ws://192.168.1.50:8080/ws
         const host = window.location.hostname || "127.0.0.1";
         ws = new WebSocket(`ws://${host}:8080/ws`);
 
@@ -28,9 +26,14 @@
 
         ws.onmessage = (event) => {
             try {
-                const data = JSON.parse(event.data);
+                const message = JSON.parse(event.data);
 
-                // If the operator cleared the screen, the rust server should send type: null
+                if (message.type !== "obs-update" || !message.payload) {
+                    return;
+                }
+
+                const data = message.payload;
+
                 if (data.type === null || data.text === "") {
                     activeCue = { type: null, text: "", subText: "" };
                 } else {
@@ -42,10 +45,10 @@
         };
 
         ws.onclose = () => {
+            activeCue = { type: null, text: "", subText: "" };
             console.log(
                 "Disconnected. Attempting to reconnect in 2 seconds...",
             );
-            // Auto-reconnect loop for reliability during live events
             reconnectTimer = setTimeout(connectWebSocket, 2000);
         };
 
@@ -69,7 +72,6 @@
 </script>
 
 <svelte:head>
-    <!-- Crucial: Forces OBS to treat the background as transparent -->
     <style>
         body {
             background-color: transparent !important;
@@ -86,32 +88,31 @@
         <div
             in:fly={{ y: 50, duration: 400, delay: 100 }}
             out:fade={{ duration: 200 }}
-            class="w-full max-w-5xl mx-auto flex flex-col gap-2"
+            class="w-full max-w-6xl mx-auto flex flex-col gap-2"
         >
             {#if activeCue.type === "bible"}
-                <!-- BIBLE DESIGN -->
                 <div
                     class="bg-zinc-900/90 backdrop-blur-md border-l-4 border-violet-500 rounded-r-2xl shadow-2xl p-6"
                 >
                     <p
-                        class="text-white text-4xl font-serif leading-tight drop-shadow-md"
+                        class="text-white text-5xl font-serif leading-tight drop-shadow-md"
                     >
-                        "{activeCue.text}"
+                        {activeCue.text}
                     </p>
                 </div>
-                <div
-                    class="bg-violet-600/95 backdrop-blur-md self-start rounded-b-xl rounded-tr-xl px-6 py-2 ml-4 shadow-xl"
-                >
-                    <p
-                        class="text-violet-50 text-xl font-bold tracking-wide uppercase"
+                <div class="w-full flex justify-end">
+                    <div
+                        class="bg-violet-600/95 backdrop-blur-md self-start rounded-b-xl rounded-tr-xl px-6 py-2 ml-4 shadow-xl"
                     >
-                        {activeCue.subText}
-                    </p>
+                        <p
+                            class="text-violet-50 text-xl font-bold tracking-wide uppercase"
+                        >
+                            {activeCue.subText}
+                        </p>
+                    </div>
                 </div>
             {:else if activeCue.type === "lyric"}
-                <!-- LYRIC DESIGN -->
                 <div class="text-center w-full">
-                    <!-- Text stroke/drop-shadow for high visibility over moving camera feeds -->
                     <p
                         class="text-white text-5xl font-bold drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]"
                         style="-webkit-text-stroke: 1px rgba(0,0,0,0.5);"

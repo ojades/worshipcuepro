@@ -1,5 +1,6 @@
 // src/lib/state/controls.svelte.ts
 import { emit, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 export class ControlsState {
   // -------------------------
@@ -151,6 +152,10 @@ export class ControlsState {
 
     try {
       await emit("controls-update", payload);
+      await invoke("broadcast_payload", {
+        eventType: "controls-update",
+        payload: payload,
+      });
     } catch (error) {
       console.error("Failed to broadcast controls:", error);
     }

@@ -13,9 +13,9 @@
         liveBackground: null,
         isBlackout: false,
         isTextCleared: false,
-        alignment: "middle",
         liveReference: null,
-        referencePosition: "bottom-right",
+        projector: null,
+        stage: null,
     });
 
     let controlsPayload = $state<any>({});

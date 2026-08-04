@@ -1,15 +1,18 @@
 <script lang="ts">
-    import FolderSync from "@lucide/svelte/icons/folder-sync";
-    import Monitor from "@lucide/svelte/icons/monitor";
-    import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
-    import Library from "@lucide/svelte/icons/library";
-    import Network from "@lucide/svelte/icons/network";
-    import Info from "@lucide/svelte/icons/info";
-    import BookOpen from "@lucide/svelte/icons/book-open"; // Added BookOpen
-
     // Import the decoupled components
     import WorkspaceSettings from "$lib/components/layout/settings/WorkspaceSettings.svelte";
     import BibleSettings from "$lib/components/layout/settings/BibleSettings.svelte";
+    import RemoteDisplay from "$lib/components/layout/settings/RemoteDisplay.svelte";
+    import {
+        FolderSync,
+        BookOpen,
+        Monitor,
+        SlidersHorizontal,
+        Library,
+        Network,
+        Info,
+        Cast,
+    } from "@lucide/svelte";
 
     type Category =
         | "workspace"
@@ -25,7 +28,7 @@
     const menuItems: { id: Category; label: string; icon: any }[] = [
         { id: "workspace", label: "Workspace & Sync", icon: FolderSync },
         { id: "bibles", label: "Bible Translations", icon: BookOpen }, // New Item
-        { id: "display", label: "Display Output", icon: Monitor },
+        { id: "display", label: "Remote Display", icon: Cast },
         {
             id: "defaults",
             label: "Presentation Defaults",
@@ -80,19 +83,7 @@
         {:else if activeCategory === "bibles"}
             <BibleSettings />
         {:else if activeCategory === "display"}
-            <div class="max-w-2xl animate-in fade-in duration-300">
-                <h1 class="text-2xl font-bold text-foreground mb-2">
-                    Display Output
-                </h1>
-                <p class="text-sm text-muted-foreground mb-6">
-                    Manage how presentations are routed to external hardware.
-                </p>
-                <div
-                    class="p-8 border border-dashed border-border rounded-xl text-center text-muted-foreground"
-                >
-                    Moved to Header Menu (Top Bar)
-                </div>
-            </div>
+            <RemoteDisplay />
         {:else if activeCategory === "about"}
             <div class="max-w-2xl animate-in fade-in duration-300 space-y-4">
                 <h1 class="text-2xl font-bold text-foreground mb-2">About</h1>

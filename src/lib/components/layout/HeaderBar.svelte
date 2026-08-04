@@ -18,8 +18,7 @@
         MonitorPlay,
         Power,
         Tv,
-        AlignVerticalSpaceAround,
-        MonitorX, // optional if you want icons next to text later
+        MonitorX,
     } from "@lucide/svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
@@ -180,7 +179,7 @@
             {#if isDisplayMenuOpen}
                 <!-- Invisible backdrop to close menu when clicking outside -->
                 <div
-                    class="fixed inset-0 z-40"
+                    class="fixed inset-0 z-40 h-screen"
                     onclick={() => (isDisplayMenuOpen = false)}
                     aria-hidden="true"
                 ></div>

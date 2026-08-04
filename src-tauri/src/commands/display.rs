@@ -1,3 +1,4 @@
+// /src-tauri/src/commands/display.rs
 use serde::Serialize;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 

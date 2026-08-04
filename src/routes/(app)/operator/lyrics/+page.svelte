@@ -5,17 +5,10 @@
         type Song,
     } from "$lib/components/lyrics/SongLibrary.svelte";
     import LyricsView from "$lib/components/lyrics/LyricsView.svelte";
-    import type { Cue } from "$lib/types/models";
+    import type { Cue, SongCue } from "$lib/types/models";
     import { presentation } from "$lib/state/presentation.svelte";
     import { songsState } from "$lib/state/songs.svelte";
     import { parseLyrics } from "$lib/utils/lyrics";
-
-    export type SongCue = Cue & {
-        key?: string;
-        tempo?: number;
-        ccli?: string;
-        raw_lyrics?: string;
-    };
 
     let selectedSongId = $state<string | null>(null);
     let forceEditMode = $state(false);

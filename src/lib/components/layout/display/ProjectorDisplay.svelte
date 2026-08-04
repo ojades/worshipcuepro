@@ -3,12 +3,7 @@
     import type { PresentationPayload } from "$lib/types/models";
     import { onMount, onDestroy } from "svelte";
     export interface ExtendedPayload extends PresentationPayload {
-        alignment?: "top" | "middle" | "bottom";
         liveReference?: string | null;
-        referencePosition?:
-            "bottom-right" | "bottom-left" | "top-right" | "top-left";
-        textScale?: number;
-        stageTextScale?: number;
 
         // Controls Routing Payload
         stageMessage?: string;
@@ -22,11 +17,13 @@
         showSpeakerTimerOnProjector?: boolean;
     }
 
-    let { display } = $props<{ display: ExtendedPayload }>();
+    let { display }: { display: ExtendedPayload } = $props<{
+        display: ExtendedPayload;
+    }>();
 
     // Dynamic classes
     let alignmentClass = $derived.by(() => {
-        switch (display.alignment) {
+        switch (display.projector?.textVAlign) {
             case "top":
                 return "justify-start cq-pt";
             case "bottom":
@@ -38,7 +35,7 @@
     });
 
     let referencePositionClass = $derived.by(() => {
-        switch (display.referencePosition) {
+        switch (display.projector?.referencePosition) {
             case "bottom-left":
                 return "cq-pos-bottom cq-pos-left text-left";
             case "top-right":
@@ -156,7 +153,8 @@
             {:else if display.liveText}
                 <p
                     class="text-white cq-pb-offset font-bold text-center leading-tight whitespace-pre-wrap drop-shadow-[0_4px_6px_rgba(0,0,0,0.8)]"
-                    style="font-size: {(display.textScale ?? 1) * 6}cqw;"
+                    style="font-size: {(display.projector?.textScale ?? 1) *
+                        6}cqw;"
                 >
                     {display.liveText}
                 </p>
@@ -169,7 +167,8 @@
                 >
                     <p
                         class="text-white/80 font-bold drop-shadow-[0_4px_6px_rgba(0,0,0,0.9)]"
-                        style="font-size: {(display.textScale ?? 1) * 3}cqw;"
+                        style="font-size: {(display.projector?.textScale ?? 1) *
+                            3}cqw;"
                     >
                         {display.liveReference}
                     </p>

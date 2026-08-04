@@ -3,13 +3,13 @@
     import { Form, Monitor, Projector, User } from "@lucide/svelte";
     import { systemState } from "$lib/state/system.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
-    import { settingsState } from "$lib/state/settings.svelte";
     import { controlsState } from "$lib/state/controls.svelte"; // NEW
 
     import ProjectorDisplay from "$lib/components/layout/display/ProjectorDisplay.svelte";
     import StageDisplay from "$lib/components/layout/display/StageDisplay.svelte";
     import ControlPanelTabs from "./controlpanel/ControlPanelTabs.svelte";
     import FormatControls from "./controlpanel/FormatControls.svelte";
+    import { settingsState } from "$lib/state/settings.svelte";
 
     let previewTab = $state<"confidence" | "audience">("confidence");
     let live = $derived(systemState.isProjectorOpen || systemState.isStageOpen);
@@ -24,12 +24,26 @@
         isBlackout: presentation.isBlackout,
         isTextCleared: presentation.isTextCleared,
         liveReference: presentation.liveReference,
-        textScale: (settingsState.config as any).textScale ?? 1.0,
-        stageTextScale: (settingsState.config as any).stageTextScale ?? 1.0,
-        alignment: (settingsState.config as any).projectorAlignment || "middle",
-        referencePosition:
-            (settingsState.config as any).bibleReferencePosition ||
-            "bottom-right",
+
+        // Settings
+        linesPerSlide: presentation.linesPerSlide,
+        stage: {
+            textScale: settingsState.config.stage?.textScale,
+            textVAlign: settingsState.config.stage?.textVAlign,
+            referencePosition: settingsState.config.stage?.referencePosition,
+        },
+        projector: {
+            textScale: settingsState.config.projector?.textScale,
+            textVAlign: settingsState.config.projector?.textVAlign,
+            referencePosition:
+                settingsState.config.projector?.referencePosition,
+        },
+        // textScale: (settingsState.config as any).textScale ?? 1.0,
+        // stageTextScale: (settingsState.config as any).stageTextScale ?? 1.0,
+        // alignment: (settingsState.config as any).projectorAlignment || "middle",
+        // referencePosition:
+        //     (settingsState.config as any).bibleReferencePosition ||
+        //     "bottom-right",
 
         // Stage Controls Routing Mapping
         stageMessage: controlsState.stageMessage,

@@ -11,11 +11,12 @@
         ListPlus,
         AlertCircle,
     } from "@lucide/svelte";
-    import type { SongCue } from "../../../routes/operator/lyrics/+page.svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import AddToPlaylistMenu from "$lib/components/ui/AddToPlaylistMenu.svelte";
     import { songsState } from "$lib/state/songs.svelte";
     import { parseLyrics } from "$lib/utils/lyrics";
+    import { settingsState } from "$lib/state/settings.svelte";
+    import type { SongCue } from "$lib/types/models";
 
     let {
         song,
@@ -37,6 +38,7 @@
     let editArtist = $state("");
     let editLyrics = $state("");
     let linesPerSlide = $state<number>(0);
+    let defaultLinesPerSlide = $derived(settingsState.config.linesPerSlide);
 
     // Listen for new song selection or forced edit
     $effect(() => {
@@ -45,7 +47,7 @@
             showDeleteConfirm = false; // Reset delete confirmation on song change
             if (forceEditMode) initEditForm();
             else {
-                linesPerSlide = song.lines_per_slide || 0;
+                linesPerSlide = song.lines_per_slide || defaultLinesPerSlide;
             }
         }
     });
@@ -53,7 +55,7 @@
     // Stable parses for both edit mode and viewer mode so IDs don't regenerate on every render
     let parsedSections = $derived(parseLyrics(editLyrics, linesPerSlide));
     let viewerSections = $derived(
-        song ? parseLyrics(song.raw_lyrics, song.lines_per_slide || 0) : [],
+        song ? parseLyrics(song.raw_lyrics, linesPerSlide) : [],
     );
 
     function initEditForm() {

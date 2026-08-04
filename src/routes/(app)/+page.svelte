@@ -1,4 +1,4 @@
-<!-- src/routes/+page.svelte -->
+<!-- src/routes/(app)/+page.svelte -->
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
 

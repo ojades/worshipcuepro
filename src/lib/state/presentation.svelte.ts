@@ -1,5 +1,10 @@
 // src/lib/state/presentation.svelte.ts
-import type { PresentationPayload, Cue, Playlist } from "$lib/types/models";
+import type {
+  PresentationPayload,
+  Cue,
+  Playlist,
+  DisplayConfig,
+} from "$lib/types/models";
 import { emit, listen } from "@tauri-apps/api/event";
 import { parseLyrics } from "$lib/utils/lyrics";
 import { songsState } from "$lib/state/songs.svelte";
@@ -14,6 +19,17 @@ export class PresentationState {
   isTextCleared = $state(false);
   isBackgroundCleared = $state(false);
   currentBackground = $state<{ url: string; type: string } | null>(null);
+  linesPerSlide = $state<number>(settingsState.config?.linesPerSlide || 0);
+  projectorConfig = $state<DisplayConfig | null>({
+    textScale: settingsState.config.projector?.textScale,
+    textVAlign: settingsState.config.projector?.textVAlign,
+    referencePosition: settingsState.config.projector?.referencePosition,
+  });
+  stageConfig = $state<DisplayConfig | null>({
+    textScale: settingsState.config.stage?.textScale,
+    textVAlign: settingsState.config.stage?.textVAlign,
+    referencePosition: settingsState.config.stage?.referencePosition,
+  });
 
   activePlaylist = $state<Playlist | null>(null);
   activeCue = $state<Cue | null>(null);
@@ -114,7 +130,7 @@ export class PresentationState {
     if (isSameCue && cue.type !== "bible") {
       cue.sections = this.activeCue!.sections;
     } else if (cue.type === "media") {
-      // --- NEW LOGIC: Safely fallback to converting the raw filepath if asset_url is missing ---
+      // --- Safely fallback to converting the raw filepath if asset_url is missing ---
       const safeUrl =
         cue.asset_url || (cue.filepath ? convertFileSrc(cue.filepath) : "");
 
@@ -129,7 +145,7 @@ export class PresentationState {
               text: "",
               media: {
                 type: cue.media_type || cue.type || "image",
-                url: safeUrl, // Use the converted URL here
+                url: safeUrl,
               },
             },
           ],
@@ -377,8 +393,8 @@ export class PresentationState {
   }
 
   public async broadcastState() {
-    // 1. Local displays payload
-    const payload: any = {
+    console.log("Broadcasting request", this.liveText);
+    const payload: PresentationPayload = {
       liveText: this.liveText,
       nextText: this.liveNextText,
       liveReference: this.liveReference,
@@ -386,19 +402,23 @@ export class PresentationState {
       liveMedia: this.liveMedia,
       isBlackout: this.isBlackout,
       isTextCleared: this.isTextCleared,
-      alignment: settingsState.config.projectorAlignment,
-      referencePosition:
-        (settingsState.config as any).bibleReferencePosition || "bottom-right",
-      textScale: settingsState.config.textScale,
-      stageTextScale: settingsState.config.stageTextScale,
+      linesPerSlide: this.linesPerSlide || settingsState.config?.linesPerSlide,
+      projector: {
+        textScale: settingsState.config.projector?.textScale,
+        textVAlign: settingsState.config.projector?.textVAlign,
+        referencePosition: settingsState.config.projector?.referencePosition,
+      },
+      stage: {
+        textScale: settingsState.config.stage?.textScale,
+        textVAlign: settingsState.config.stage?.textVAlign,
+        referencePosition: settingsState.config.stage?.referencePosition,
+      },
     };
 
-    // 2. OBS Network payload
     let obsType: "lyric" | "bible" | null = null;
     let obsText = this.liveText;
     let obsSubText = this.liveReference || undefined;
 
-    // If the screen is cleared, blacked out, or there is no text, tell OBS to hide
     if (
       this.isBlackout ||
       this.isTextCleared ||
@@ -417,12 +437,15 @@ export class PresentationState {
     }
 
     try {
-      // Fire to local projector and stage displays (Tauri Event)
       await emit("presentation-update", payload);
 
-      // Fire to LAN OBS Broadcast Server (Tauri Command -> Rust -> WebSockets)
-      await invoke("broadcast_to_obs", {
-        cueData: {
+      await invoke("broadcast_payload", {
+        eventType: "presentation-update",
+        payload: payload,
+      });
+      await invoke("broadcast_payload", {
+        eventType: "obs-update",
+        payload: {
           type: obsType,
           text: obsText,
           subText: obsSubText,

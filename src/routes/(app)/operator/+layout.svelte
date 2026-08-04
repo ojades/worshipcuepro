@@ -1,5 +1,6 @@
+<!-- /src/routes/operator/+layout.svelte -->
 <script lang="ts">
-    import "../../app.css";
+    // import "../../app.css";
     import { page } from "$app/stores";
 
     // Global Layout Components
