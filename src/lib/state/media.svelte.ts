@@ -9,7 +9,7 @@ import { settingsState } from "$lib/state/settings.svelte";
 export interface Media {
   id: string;
   filename: string;
-  filepath: string;
+  filepath: string; // In DB this is relative, in State this resolves to Absolute
   asset_url?: string;
   type: string;
 }
@@ -28,11 +28,35 @@ class MediaState {
       "SELECT * FROM media ORDER BY created_at DESC",
     );
 
-    // Convert the raw file paths into secure asset:// URLs for the UI
-    this.allMedia = results.map((media) => ({
-      ...media,
-      asset_url: convertFileSrc(media.filepath),
-    }));
+    const workspace = settingsState.config.workspacePath;
+    let mediaDirPath = "";
+    if (workspace) {
+      mediaDirPath = await join(workspace, "media");
+    }
+
+    // Convert the raw/relative file paths into absolute paths and secure asset:// URLs
+    const processedMedia = await Promise.all(
+      results.map(async (media) => {
+        let absolutePath = media.filepath;
+
+        // If it's just a filename (no slashes) and we have a workspace, construct the absolute path
+        if (
+          workspace &&
+          !absolutePath.includes("/") &&
+          !absolutePath.includes("\\")
+        ) {
+          absolutePath = await join(mediaDirPath, media.filepath);
+        }
+
+        return {
+          ...media,
+          filepath: absolutePath, // Expose absolute path in memory for UI components
+          asset_url: convertFileSrc(absolutePath),
+        };
+      }),
+    );
+
+    this.allMedia = processedMedia;
   }
 
   async importMedia() {
@@ -71,7 +95,7 @@ class MediaState {
     // Extract the full filename (e.g., "background.mp4")
     const fullFileName = filePath.split(/[/\\]/).pop() || "New Media";
 
-    // Extract just the name without extension for the DB
+    // Extract just the name without extension for the DB display name
     const name = fullFileName.replace(/\.[^/.]+$/, "");
 
     // Get the extension to determine the type
@@ -81,9 +105,8 @@ class MediaState {
     const videoExtensions = ["mp4", "webm", "mov"];
     const mediaType = videoExtensions.includes(extension) ? "video" : "image";
 
-    // Copy to workspace if one is configured
-    let finalFilePath = filePath;
     const workspace = settingsState.config.workspacePath;
+    let dbFilePath = filePath; // Default to absolute path if no workspace exists
 
     if (workspace) {
       try {
@@ -97,7 +120,7 @@ class MediaState {
 
         // Prevent overwriting files with the exact same name
         let targetFileName = fullFileName;
-        finalFilePath = await join(mediaDirPath, targetFileName);
+        let finalFilePath = await join(mediaDirPath, targetFileName);
 
         if (await exists(finalFilePath)) {
           const uniqueId = crypto.randomUUID().split("-")[0];
@@ -107,9 +130,11 @@ class MediaState {
 
         // Copy the file from the original location to the workspace
         await copyFile(filePath, finalFilePath);
+
+        // Store ONLY the filename in the database for cross-device compatibility
+        dbFilePath = targetFileName;
       } catch (err) {
         console.error("Failed to copy media to workspace:", err);
-        finalFilePath = filePath;
       }
     }
 
@@ -118,7 +143,7 @@ class MediaState {
 
     await db.execute(
       "INSERT INTO media (id, filename, filepath, type) VALUES ($1, $2, $3, $4)",
-      [id, name, finalFilePath, mediaType],
+      [id, name, dbFilePath, mediaType],
     );
 
     await this.loadAll();
@@ -127,7 +152,7 @@ class MediaState {
   async delete(id: string) {
     const db = await this.initDb();
 
-    // 1. Fetch the media record first so we know where the file is stored
+    // 1. Fetch the media record first so we know what filename to delete
     const results = await db.select<Media[]>(
       "SELECT filepath FROM media WHERE id = $1",
       [id],
@@ -138,16 +163,23 @@ class MediaState {
 
     // 3. Safely attempt to delete the physical file from the workspace
     if (results.length > 0) {
-      const filepath = results[0].filepath;
+      let filepath = results[0].filepath;
       const workspace = settingsState.config.workspacePath;
 
-      if (workspace && filepath.includes(workspace)) {
-        try {
-          if (await exists(filepath)) {
-            await remove(filepath);
+      if (workspace) {
+        // Resolve absolute path if only a filename was stored
+        if (!filepath.includes("/") && !filepath.includes("\\")) {
+          filepath = await join(workspace, "media", filepath);
+        }
+
+        if (filepath.includes(workspace)) {
+          try {
+            if (await exists(filepath)) {
+              await remove(filepath);
+            }
+          } catch (err) {
+            console.error("Failed to delete physical media file:", err);
           }
-        } catch (err) {
-          console.error("Failed to delete physical media file:", err);
         }
       }
     }
