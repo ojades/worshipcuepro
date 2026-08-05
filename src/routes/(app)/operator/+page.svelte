@@ -1,12 +1,21 @@
 <!-- src/routes/operator/+page.svelte -->
 <script lang="ts">
-    import { onMount, onDestroy } from "svelte"; // <-- Add onMount here
+    import { onMount, onDestroy } from "svelte";
     import QuickFinder from "$lib/components/layout/cue/QuickFinder.svelte";
     import SlideGrid from "$lib/components/layout/cue/SlideGrid.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
-    import { Settings2, Edit2, Hash } from "@lucide/svelte";
+    import { bibleState } from "$lib/state/bible.svelte";
+    import { settingsState } from "$lib/state/settings.svelte";
+    import { chunkProse } from "$lib/utils/helper";
+    import {
+        Settings2,
+        Edit2,
+        Hash,
+        ChevronDown,
+        Loader2,
+    } from "@lucide/svelte";
     import Button from "$lib/components/ui/Button.svelte";
-    import { SHORTCUTS, formatShortcut } from "$lib/utils/shortcuts"; // Optional: to populate tooltips natively
+    import { SHORTCUTS, formatShortcut } from "$lib/utils/shortcuts";
 
     let isSongCue = $derived(
         presentation.activeCue &&
@@ -24,6 +33,24 @@
     let isVerseJumping = $state(false);
     let jumpQuery = $state("");
     let jumpInputRef = $state<HTMLInputElement | null>(null);
+
+    // --- NEW: VERSION SWITCHING STATE ---
+    let isVersionDropdownOpen = $state(false);
+    let isSwitchingVersion = $state(false);
+
+    let enabledVersions = $derived.by(() => {
+        const enabledIds = (settingsState.config as any).enabledBibles || [];
+        if (enabledIds.length === 0) return bibleState.versions;
+        return bibleState.versions.filter((v) => enabledIds.includes(v.id));
+    });
+
+    let currentVersionName = $derived.by(() => {
+        if (!bibleState.selectedVersion) return "Version";
+        const v = enabledVersions.find(
+            (v) => v.id === bibleState.selectedVersion,
+        );
+        return v ? v.abbreviation || v.name : "Version";
+    });
 
     let currentVerseTracker = $derived.by(() => {
         if (
@@ -78,14 +105,109 @@
         jumpQuery = "";
     }
 
-    // --- NEW EVENT LISTENER MOUNT ---
+    // --- FAST VERSION SWITCHING ---
+    async function switchBibleVersion(newVersionId: string) {
+        if (!isBibleCue || !presentation.activeCue || isSwitchingVersion)
+            return;
+        isVersionDropdownOpen = false;
+
+        const targetBook = bibleState.selectedBook;
+        const targetChapter = bibleState.selectedChapter;
+
+        if (!targetBook || !targetChapter) {
+            console.warn("No active book/chapter in bibleState to switch.");
+            return;
+        }
+
+        isSwitchingVersion = true;
+
+        try {
+            // 1. Save active verse id safely so we don't lose our place
+            const currentActiveSlideId = presentation.activeSlideId;
+            // Use optional chaining safely in case sections array is empty/missing
+            let activeVerseId = presentation.activeCue.sections?.[0]?.id;
+
+            if (currentActiveSlideId && presentation.activeCue.sections) {
+                const activeSection = presentation.activeCue.sections.find(
+                    (s: any) =>
+                        s.slides?.some(
+                            (sl: any) => sl.id === currentActiveSlideId,
+                        ),
+                );
+                if (activeSection) activeVerseId = activeSection.id;
+            }
+
+            // 2. Load new version data down the tree
+            await bibleState.selectVersion(newVersionId);
+            await bibleState.selectBook(targetBook);
+            await bibleState.selectChapter(targetChapter);
+
+            // 3. Resolve the active verse text immediately (only if we found a valid ID)
+            if (activeVerseId) {
+                const activeVerseRawId = activeVerseId.replace("verse_", "");
+                await bibleState.resolveVerseText(activeVerseRawId);
+            }
+
+            // 4. Rebuild the Cue
+            const version = bibleState.versions.find(
+                (v) => v.id === bibleState.selectedVersion,
+            );
+            const versionAbbr =
+                version?.abbreviation || version?.name || "Bible";
+            const book = bibleState.books.find(
+                (b) => b.id === bibleState.selectedBook,
+            );
+            const chapter = bibleState.chapters.find(
+                (c) => c.id === bibleState.selectedChapter,
+            );
+            const linesPerSlide =
+                (settingsState.config as any).linesPerSlide || 0;
+
+            const bibleCue = {
+                id: `bible_${bibleState.selectedVersion}_${bibleState.selectedChapter}`,
+                type: "bible",
+                title: `${book?.name} ${chapter?.number}`,
+                artist: versionAbbr,
+                sections: bibleState.verses.map((v) => {
+                    const chunks = chunkProse(
+                        v.text || "Loading...",
+                        linesPerSlide,
+                    );
+                    return {
+                        id: `verse_${v.id}`,
+                        title: v.reference,
+                        slides: chunks.map((chunkText, i) => ({
+                            id: `slide_${v.id}_${i}`,
+                            text: chunkText,
+                            reference: `${v.reference} (${versionAbbr})${chunks.length > 1 ? ` [${i + 1}/${chunks.length}]` : ""}`,
+                        })),
+                    };
+                }),
+            };
+
+            // 5. Fire seamlessly to the screen!
+            // (If activeVerseId is undefined, fire will default to the first slide gracefully)
+            presentation.fire(bibleCue, activeVerseId);
+        } catch (e) {
+            console.error("Failed to switch version:", e);
+        } finally {
+            isSwitchingVersion = false;
+        }
+    }
+
     onMount(() => {
+        // Ensure versions exist just in case they loaded straight into this page
+        if (bibleState.versions.length === 0) {
+            bibleState.loadVersions();
+        }
+
         const handleEscape = () => {
             if (isQuickEditing) cancelQuickEdit();
             else if (isVerseJumping) {
                 isVerseJumping = false;
                 jumpQuery = "";
             }
+            if (isVersionDropdownOpen) isVersionDropdownOpen = false;
         };
 
         const handleQuickEdit = () => {
@@ -128,18 +250,74 @@
 <div class="flex flex-col h-full overflow-hidden bg-background">
     <!-- Header Area -->
     <div
-        class="p-6 pb-4 shrink-0 border-b border-border flex items-center justify-between gap-4"
+        class="p-6 pb-4 shrink-0 border-b border-border flex items-center justify-between gap-4 relative z-50"
     >
         {#if presentation.activeCue}
-            <div class="flex items-center gap-4 min-w-0">
+            <div class="flex flex-wrap items-center gap-3 min-w-0">
                 <h1
                     class="text-2xl font-bold text-foreground tracking-tight truncate"
                 >
                     {presentation.activeCue.title}
                 </h1>
 
-                <!-- Bible Verse Tracker / Jumper Trigger Badge -->
                 {#if isBibleCue}
+                    <!-- VERSION DROPDOWN (NEW) -->
+                    <div class="relative">
+                        <button
+                            onclick={() =>
+                                (isVersionDropdownOpen =
+                                    !isVersionDropdownOpen)}
+                            disabled={isSwitchingVersion}
+                            class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-700/50 rounded-xl text-sm font-bold text-zinc-300 transition-all cursor-pointer group shadow-sm disabled:opacity-50"
+                        >
+                            {#if isSwitchingVersion}
+                                <Loader2
+                                    size={16}
+                                    class="animate-spin text-neon-violet"
+                                />
+                            {/if}
+                            <span
+                                class="group-hover:text-white transition-colors"
+                            >
+                                {currentVersionName}
+                            </span>
+                            <ChevronDown
+                                size={14}
+                                class="text-zinc-500 group-hover:text-white transition-colors {isVersionDropdownOpen
+                                    ? 'rotate-180'
+                                    : ''}"
+                            />
+                        </button>
+
+                        {#if isVersionDropdownOpen}
+                            <!-- svelte-ignore a11y_click_events_have_key_events -->
+                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                            <div
+                                class="fixed inset-0 z-40"
+                                onclick={() => (isVersionDropdownOpen = false)}
+                            ></div>
+
+                            <div
+                                class="absolute top-full left-0 w-48 mt-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden max-h-60 overflow-y-auto custom-scrollbar flex flex-col py-1"
+                            >
+                                {#each enabledVersions as version}
+                                    <button
+                                        type="button"
+                                        onclick={() =>
+                                            switchBibleVersion(version.id)}
+                                        class="w-full text-left px-4 py-2 text-sm transition-colors {bibleState.selectedVersion ===
+                                        version.id
+                                            ? 'bg-violet-600/20 text-violet-400 font-medium'
+                                            : 'text-zinc-300 hover:bg-zinc-800'}"
+                                    >
+                                        {version.abbreviation || version.name}
+                                    </button>
+                                {/each}
+                            </div>
+                        {/if}
+                    </div>
+
+                    <!-- BIBLE VERSE TRACKER / JUMPER -->
                     {#if isVerseJumping}
                         <div
                             class="flex items-center gap-2 bg-zinc-900/90 border-2 border-neon-violet px-3 py-1.5 rounded-xl animate-in fade-in shadow-lg shadow-neon-violet/10"
@@ -166,7 +344,7 @@
                                 isVerseJumping = true;
                                 setTimeout(() => jumpInputRef?.focus(), 50);
                             }}
-                            class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-700/50 rounded-xl text-sm md:text-base font-bold text-zinc-300 transition-all cursor-pointer group shadow-sm"
+                            class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-700/50 rounded-xl text-sm font-bold text-zinc-300 transition-all cursor-pointer group shadow-sm"
                             title="Press '/' or 'F' to jump to verse"
                         >
                             <Hash
@@ -234,7 +412,7 @@
     </div>
 
     <!-- Active Cue Slides Grid (Top 2/3) -->
-    <div class="flex-1 overflow-y-auto p-6 min-h-0 custom-scrollbar">
+    <div class="flex-1 overflow-y-auto p-6 min-h-0 custom-scrollbar z-0">
         <SlideGrid
             bind:isQuickEditing
             bind:editLyrics
@@ -245,7 +423,7 @@
 
     <!-- Quick Finder (Bottom 1/3) -->
     <div
-        class="h-1/3 min-h-70 shrink-0 border-t border-border bg-card/30 p-6 flex flex-col gap-4"
+        class="h-1/3 min-h-70 shrink-0 border-t border-border bg-card/30 p-6 flex flex-col gap-4 z-0"
     >
         <QuickFinder />
     </div>

@@ -1,6 +1,7 @@
 // src/lib/state/settings.svelte.ts
 import { browser } from "$app/environment";
 import type { AppSettings } from "$lib/types/models";
+import { mkdir } from "@tauri-apps/plugin-fs";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   workspacePath: null,
@@ -10,6 +11,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "ab_06125adad2d5898a-01",
     "ab_6f11a7de016f942e-01",
     "ab_63097d2a0a2f7db3-01",
+    "sys_NIV",
+    "sys_NKJV",
   ],
   projector: {
     textScale: 1,
@@ -71,6 +74,18 @@ class SettingsState {
       console.error("Failed to import settings:", e);
       return false;
     }
+  }
+
+  async parseWorkspaceDir(dirPath: string): Promise<string> {
+    const folderName = dirPath.split(/[/\\]/).pop();
+
+    if (folderName?.toLowerCase() !== "worshipcuepro") {
+      const newPath = `${dirPath}/worshipcuepro`;
+      await mkdir(newPath, { recursive: true });
+      return newPath;
+    }
+
+    return dirPath;
   }
 }
 

@@ -2,13 +2,151 @@
 import { bibleClient } from "$lib/api/bible-client";
 import { youversionClient } from "$lib/api/youversion-client";
 import { getDB } from "$lib/db";
+import { settingsState } from "./settings.svelte";
 
 const CACHE_TTL_MS = 20 * 24 * 60 * 60 * 1000; // 20 Days
+
+const BOOK_NAMES = [
+  "Genesis",
+  "Exodus",
+  "Leviticus",
+  "Numbers",
+  "Deuteronomy",
+  "Joshua",
+  "Judges",
+  "Ruth",
+  "1 Samuel",
+  "2 Samuel",
+  "1 Kings",
+  "2 Kings",
+  "1 Chronicles",
+  "2 Chronicles",
+  "Ezra",
+  "Nehemiah",
+  "Esther",
+  "Job",
+  "Psalms",
+  "Proverbs",
+  "Ecclesiastes",
+  "Song of Solomon",
+  "Isaiah",
+  "Jeremiah",
+  "Lamentations",
+  "Ezekiel",
+  "Daniel",
+  "Hosea",
+  "Joel",
+  "Amos",
+  "Obadiah",
+  "Jonah",
+  "Micah",
+  "Nahum",
+  "Habakkuk",
+  "Zephaniah",
+  "Haggai",
+  "Zechariah",
+  "Malachi",
+  "Matthew",
+  "Mark",
+  "Luke",
+  "John",
+  "Acts",
+  "Romans",
+  "1 Corinthians",
+  "2 Corinthians",
+  "Galatians",
+  "Ephesians",
+  "Philippians",
+  "Colossians",
+  "1 Thessalonians",
+  "2 Thessalonians",
+  "1 Timothy",
+  "2 Timothy",
+  "Titus",
+  "Philemon",
+  "Hebrews",
+  "James",
+  "1 Peter",
+  "2 Peter",
+  "1 John",
+  "2 John",
+  "3 John",
+  "Jude",
+  "Revelation",
+];
+const BOOK_CODES = [
+  "GEN",
+  "EXO",
+  "LEV",
+  "NUM",
+  "DEU",
+  "JOS",
+  "JDG",
+  "RUT",
+  "1SA",
+  "2SA",
+  "1KI",
+  "2KI",
+  "1CH",
+  "2CH",
+  "EZR",
+  "NEH",
+  "EST",
+  "JOB",
+  "PSA",
+  "PRO",
+  "ECC",
+  "SNG",
+  "ISA",
+  "JER",
+  "LAM",
+  "EZK",
+  "DAN",
+  "HOS",
+  "JOL",
+  "AMO",
+  "OBA",
+  "JON",
+  "MIC",
+  "NAM",
+  "HAB",
+  "ZEP",
+  "HAG",
+  "ZEC",
+  "MAL",
+  "MAT",
+  "MRK",
+  "LUK",
+  "JHN",
+  "ACT",
+  "ROM",
+  "1CO",
+  "2CO",
+  "GAL",
+  "EPH",
+  "PHP",
+  "COL",
+  "1TH",
+  "2TH",
+  "1TI",
+  "2TI",
+  "TIT",
+  "PHM",
+  "HEB",
+  "JAS",
+  "1PE",
+  "2PE",
+  "1JN",
+  "2JN",
+  "3JN",
+  "JUD",
+  "REV",
+];
 
 // --- UNIFIED INTERFACES ---
 export interface UnifiedBible {
   id: string;
-  provider: "api.bible" | "youversion";
+  provider: "api.bible" | "youversion" | "system";
   originalId: string;
   name: string;
   abbreviation: string;
@@ -61,6 +199,12 @@ class BibleState {
   // ----------------------------------------
 
   private getProviderAndId(prefixedId: string) {
+    if (prefixedId.startsWith("sys_")) {
+      return {
+        provider: "system" as const,
+        originalId: prefixedId.replace(/^sys_/, ""),
+      };
+    }
     const isApiBible = prefixedId.startsWith("ab_");
     const originalId = prefixedId.replace(/^(ab_|yv_)/, "");
     return { provider: isApiBible ? "api.bible" : "youversion", originalId };
@@ -74,9 +218,141 @@ class BibleState {
       if (lastVersion && this.versions.some((v) => v.id === lastVersion)) {
         await this.selectVersion(lastVersion);
       } else {
-        await this.selectVersion(this.versions[0].id);
+        const enabledBibles = settingsState.config.enabledBibles;
+        const firstEnabled = enabledBibles[0];
+        await this.selectVersion(firstEnabled || this.versions[0].id);
       }
     }
+  }
+
+  // ----------------------------------------
+  // SYSTEM BIBLE IMPORTER
+  // ----------------------------------------
+  /**
+   * Feed this function the raw JSON array. It will organize it into the cache DB.
+   * Call this during app startup (e.g., in a layout `+page.ts` or `onMount`).
+   */
+  async importSystemBible(jsonData: any[]) {
+    if (!jsonData || jsonData.length === 0) return;
+
+    const versionAbbr = jsonData[0].version;
+    const prefixedId = `sys_${versionAbbr}`;
+    const importFlagKey = `imported_${prefixedId}`;
+
+    // Skip if we already imported this version
+    const alreadyImported = await this.cacheDB.get(importFlagKey);
+    if (alreadyImported) {
+      console.log(`[System Bible] ${versionAbbr} already imported. Skipping.`);
+      return;
+    }
+
+    console.log(
+      `[System Bible] Importing ${versionAbbr}... This may take a moment.`,
+    );
+
+    // 1. Register the version in our system list
+    let systemVersions =
+      (await this.cacheDB.get<UnifiedBible[]>("system_bible_versions")) || [];
+    if (!systemVersions.some((v) => v.id === prefixedId)) {
+      systemVersions.push({
+        id: prefixedId,
+        provider: "system",
+        originalId: versionAbbr,
+        name: `${versionAbbr} (Local)`,
+        abbreviation: versionAbbr,
+        language: jsonData[0].language || "eng",
+      });
+      await this.cacheDB.set(
+        "system_bible_versions",
+        systemVersions,
+        10 * 365 * 24 * 60 * 60 * 1000,
+      );
+    }
+
+    // 2. Group the flat JSON into Books -> Chapters -> Verses
+    const booksMap = new Map<number, any>();
+
+    for (const row of jsonData) {
+      const bookNum = row.book;
+      const chapNum = row.chapter;
+      const bookUSM = BOOK_CODES[bookNum - 1];
+
+      if (!booksMap.has(bookNum)) {
+        booksMap.set(bookNum, {
+          id: bookUSM,
+          name: BOOK_NAMES[bookNum - 1],
+          chapters: new Map(),
+        });
+      }
+
+      const book = booksMap.get(bookNum);
+      if (!book.chapters.has(chapNum)) {
+        book.chapters.set(chapNum, []);
+      }
+
+      book.chapters.get(chapNum).push({
+        id: `${bookUSM}.${chapNum}.${row.verse}`,
+        reference: `${book.name} ${chapNum}:${row.verse}`,
+        text: row.text,
+      });
+    }
+
+    // 3. Write structured data to cache DB concurrently for MASSIVE speed boost
+    const unifiedBooks: UnifiedBook[] = [];
+    const dbPromises: Promise<void>[] = []; // Collect all DB inserts here
+
+    for (const [bookNum, bookData] of booksMap.entries()) {
+      const strBookId = bookData.id;
+      unifiedBooks.push({ id: strBookId, name: bookData.name });
+
+      const unifiedChapters: UnifiedChapter[] = [];
+
+      for (const [chapNum, verses] of bookData.chapters.entries()) {
+        const uniqueChapId = `${strBookId}.${chapNum}`;
+        unifiedChapters.push({ id: uniqueChapId, number: chapNum.toString() });
+
+        // Add verse insert to promise array (do not await here!)
+        dbPromises.push(
+          this.cacheDB.set(
+            `verses_${prefixedId}_${uniqueChapId}`,
+            verses,
+            10 * 365 * 24 * 60 * 60 * 1000,
+          ),
+        );
+      }
+
+      // Add chapter list insert to promise array
+      dbPromises.push(
+        this.cacheDB.set(
+          `chapters_${prefixedId}_${strBookId}`,
+          unifiedChapters,
+          10 * 365 * 24 * 60 * 60 * 1000,
+        ),
+      );
+    }
+
+    // Add book list and flag to promise array
+    dbPromises.push(
+      this.cacheDB.set(
+        `books_${prefixedId}`,
+        unifiedBooks,
+        10 * 365 * 24 * 60 * 60 * 1000,
+      ),
+    );
+    dbPromises.push(
+      this.cacheDB.set(importFlagKey, true, 10 * 365 * 24 * 60 * 60 * 1000),
+    );
+
+    // Fire them all at once!
+    await Promise.all(dbPromises);
+
+    for (const dbTask of dbPromises) {
+      await dbTask;
+    }
+
+    console.log(`[System Bible] ${versionAbbr} import complete!`);
+
+    // await this.loadVersions();
   }
 
   async goToReference(
@@ -112,8 +388,7 @@ class BibleState {
     this.chaptersCache.clear();
     this.versesCache.clear();
 
-    await this.cacheDB.clearAll();
-
+    await this.cacheDB.delete("unified_bible_versions");
     await this.loadVersions();
   }
 
@@ -129,23 +404,47 @@ class BibleState {
     this.error = null;
 
     try {
-      const cachedData = await this.cacheDB.get<UnifiedBible[]>(cacheKey);
-      if (cachedData) {
-        this.versionsCache = cachedData;
-        this.versions = cachedData;
-        return;
-      }
+      const fetchWithTimeout = async (
+        promise: Promise<any>,
+        timeoutMs = 4000,
+      ) => {
+        let timeoutId: any;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error("Network timeout or offline")),
+            timeoutMs,
+          );
+        });
+        try {
+          const result = await Promise.race([promise, timeoutPromise]);
+          clearTimeout(timeoutId);
+          return result;
+        } catch (err) {
+          clearTimeout(timeoutId);
+          throw err;
+        }
+      };
 
-      const [abVersions, yvVersions] = await Promise.allSettled([
-        bibleClient.getVersions(),
-        youversionClient.getVersions(),
+      // Fetch System Bibles from cache instantly, wrap external APIs with a fast timeout
+      const [sysVersions, abVersions, yvVersions] = await Promise.allSettled([
+        this.cacheDB.get<UnifiedBible[]>("system_bible_versions"),
+        fetchWithTimeout(bibleClient.getVersions()),
+        fetchWithTimeout(youversionClient.getVersions()),
       ]);
 
       let unifiedList: UnifiedBible[] = [];
 
+      // 1. Load System (Local) Bibles first (Guaranteed to work offline)
+      if (sysVersions.status === "fulfilled" && sysVersions.value) {
+        unifiedList.push(...sysVersions.value);
+      } else {
+        console.log("No local system Bibles found in cache.");
+      }
+
+      // 2. Safely add API.Bible if online
       if (abVersions.status === "fulfilled") {
         unifiedList.push(
-          ...abVersions.value.map((v) => ({
+          ...abVersions.value.map((v: any) => ({
             id: `ab_${v.id}`,
             provider: "api.bible" as const,
             originalId: v.id,
@@ -155,12 +454,16 @@ class BibleState {
           })),
         );
       } else {
-        console.log("ApiBible call failed: ", abVersions.reason);
+        console.warn(
+          "ApiBible offline or failed:",
+          abVersions.reason?.message || abVersions.reason,
+        );
       }
 
+      // 3. Safely add YouVersion if online
       if (yvVersions.status === "fulfilled") {
         unifiedList.push(
-          ...yvVersions.value.map((v) => ({
+          ...yvVersions.value.map((v: any) => ({
             id: `yv_${v.id}`,
             provider: "youversion" as const,
             originalId: v.id.toString(),
@@ -170,7 +473,17 @@ class BibleState {
           })),
         );
       } else {
-        console.log("YouVersion call failed: ", yvVersions.reason);
+        console.warn(
+          "YouVersion offline or failed:",
+          yvVersions.reason?.message || yvVersions.reason,
+        );
+      }
+
+      // Ensure we have at least something to show
+      if (unifiedList.length === 0) {
+        throw new Error(
+          "No Bibles available online or offline. Please import a system Bible.",
+        );
       }
 
       const uniqueVersions = new Map<string, UnifiedBible>();
@@ -191,7 +504,7 @@ class BibleState {
       await this.cacheDB.set(cacheKey, finalVersions);
     } catch (e: any) {
       this.error = e.message;
-      console.error(e.message);
+      console.error("[BibleState] Failed to load versions:", e.message);
     } finally {
       this.isLoading = false;
     }
@@ -221,6 +534,7 @@ class BibleState {
       if (cachedData) {
         this.booksCache.set(prefixedId, cachedData);
         this.books = cachedData;
+        await this.cacheDB.set("last_used_bible", prefixedId);
         return;
       }
 
@@ -460,12 +774,13 @@ class BibleState {
         return null;
       }
     },
-    set: async (key: string, payload: any) => {
+    set: async (key: string, payload: any, customTtlMs?: number) => {
       try {
         const db = getDB();
+        const timestamp = customTtlMs ? Date.now() + customTtlMs : Date.now();
         await db.execute(
           "INSERT OR REPLACE INTO bible_cache (cache_key, data, timestamp) VALUES ($1, $2, $3)",
-          [key, JSON.stringify(payload), Date.now()],
+          [key, JSON.stringify(payload), timestamp],
         );
       } catch (err) {
         console.error(`[BibleCache] Error writing key: ${key}`, err);
