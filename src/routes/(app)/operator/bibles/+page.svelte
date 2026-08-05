@@ -19,6 +19,7 @@
     let hoveredVerseId = $state<string | null>(null);
     let isTranslationOpen = $state(false);
     let pendingVerseToFire = $state<number | null>(null); // For lag handling
+    let lastScrolledVerse = $state<number | null>(null); // NEW: Track the last auto-scrolled verse
     const fetchingVerses = new Set<string>();
 
     // Load versions when the page mounts
@@ -118,7 +119,24 @@
         }
     });
 
-    // Scroll to verse when it becomes available
+    // 5. NEW Sync State: Auto-trigger Verse Scroll on Typing
+    $effect(() => {
+        if (
+            !bibleState.isLoading &&
+            bibleState.verses.length > 0 &&
+            parsedQuery.verse !== null &&
+            parsedQuery.verse !== lastScrolledVerse
+        ) {
+            lastScrolledVerse = parsedQuery.verse;
+            // Hand this off to the existing scroll effect below
+            bibleState.pendingScrollVerse = parsedQuery.verse;
+        } else if (parsedQuery.verse === null) {
+            // Reset if the user deletes the verse number
+            lastScrolledVerse = null;
+        }
+    });
+
+    // Scroll to verse when it becomes available (or triggered by typing)
     $effect(() => {
         if (
             bibleState.pendingScrollVerse !== null &&
@@ -153,17 +171,33 @@
 
     // 6. Keyboard Interactions
     function handleSmartInputKeydown(e: KeyboardEvent) {
-        if (e.key === " ") {
+        if (e.key === " " || e.key === ":") {
             // Hit space to complete the book name
             if (filteredBooks.length === 1 && parsedQuery.chapter === null) {
                 e.preventDefault();
                 smartQuery = filteredBooks[0].name + " ";
+                return;
+            }
+
+            // NEW: Hit space or colon after chapter to lock it in and prepare for verse
+            if (parsedQuery.chapter !== null && parsedQuery.verse === null) {
+                if (!smartQuery.endsWith(":") && !smartQuery.endsWith(" ")) {
+                    e.preventDefault();
+                    // Append colon visually so they know to type the verse next
+                    smartQuery = smartQuery.trim() + ":";
+                }
             }
         } else if (e.key === "Enter") {
-            // Hit enter to flag the verse to be fired
+            // Hit enter to fire the selected verse directly to the projector!
             if (parsedQuery.verse !== null) {
                 e.preventDefault();
-                pendingVerseToFire = parsedQuery.verse;
+                const targetVerse = bibleState.verses.find((v) =>
+                    v.reference.endsWith(`:${parsedQuery.verse}`),
+                );
+
+                if (targetVerse) {
+                    sendVerseToProjector(targetVerse);
+                }
             }
         }
     }
@@ -451,8 +485,6 @@
                 {#each bibleState.verses as verse (verse.id)}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
-
-                    <!-- NOTE: Added id="verse-node-{verse.id}" for smooth scrolling -->
                     <div
                         id="verse-node-{verse.id}"
                         use:lazyLoadVerse={verse.id}
@@ -484,7 +516,6 @@
                             {verse.reference.split(":").pop()}
                         </span>
 
-                        <!--  Nicer visual loading state instead of raw text -->
                         <p
                             class="text-zinc-200 text-lg leading-relaxed font-medium"
                         >
