@@ -60,6 +60,19 @@ class SettingsState {
     this.saveSettings();
   }
 
+  // --- NEW: Clear local cache while preserving workspace ---
+  clearLocalCache() {
+    if (!browser) return;
+    const preservedWorkspace = this.config.workspacePath;
+
+    // Completely wipe localStorage
+    localStorage.clear();
+
+    // Restore config to defaults but inject the preserved workspace
+    this.config = { ...DEFAULT_SETTINGS, workspacePath: preservedWorkspace };
+    this.saveSettings();
+  }
+
   // For future use: Exporting and Importing
   exportSettings(): string {
     return JSON.stringify(this.config, null, 2);
