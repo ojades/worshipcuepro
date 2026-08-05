@@ -1,5 +1,6 @@
 // src/lib/state/settings.svelte.ts
 import { browser } from "$app/environment";
+import { getDB } from "$lib/db";
 import type { AppSettings } from "$lib/types/models";
 import { mkdir } from "@tauri-apps/plugin-fs";
 
@@ -86,6 +87,41 @@ class SettingsState {
     }
 
     return dirPath;
+  }
+
+  /**
+   * Retrieves a specific configuration value from the SQLite settings table.
+   */
+  async getDbSetting(key: string, defaultValue: string = ""): Promise<string> {
+    try {
+      const db = getDB();
+      const res = await db.select<{ value: string }[]>(
+        "SELECT value FROM settings WHERE key = $1 LIMIT 1",
+        [key],
+      );
+      return res[0]?.value || defaultValue;
+    } catch (e) {
+      console.error(`Failed to fetch DB setting for key: ${key}`, e);
+      return defaultValue;
+    }
+  }
+
+  /**
+   * Saves or updates a specific configuration value in the SQLite settings table.
+   */
+  async setDbSetting(key: string, value: string): Promise<boolean> {
+    try {
+      const db = getDB();
+      // Uses SQLite UPSERT: Inserts the new key, or updates the value if the key already exists
+      await db.execute(
+        "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [key, value],
+      );
+      return true;
+    } catch (e) {
+      console.error(`Failed to save DB setting for key: ${key}`, e);
+      return false;
+    }
   }
 }
 

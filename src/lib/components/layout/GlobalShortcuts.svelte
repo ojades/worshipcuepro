@@ -6,8 +6,16 @@
 
     function handleGlobalKeydown(e: KeyboardEvent) {
         const target = e.target as HTMLElement;
+
         const isInput =
-            target.tagName === "INPUT" || target.tagName === "TEXTAREA";
+            target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable;
+
+        // --- NEW: Prevent Backspace from navigating history ---
+        if (e.key === "Backspace" && !isInput) {
+            e.preventDefault();
+        }
 
         if (checkShortcut(e, SHORTCUTS.SAVE_EDIT)) {
             e.preventDefault();

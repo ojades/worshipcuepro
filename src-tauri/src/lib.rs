@@ -65,6 +65,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Create a broadcast channel with a capacity of 100 messages
             let (tx, _rx) = broadcast::channel(100);
@@ -96,6 +97,8 @@ pub fn run() {
             commands::display::is_stage_open,
             commands::display::get_displays,
             commands::network::get_local_ip,
+            commands::lyrics::search_genius,
+            commands::lyrics::scrape_genius_lyrics,
             broadcast_payload,
             get_bible_versions,
             get_bible_books,

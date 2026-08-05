@@ -97,6 +97,13 @@ export async function initDB(workspacePath: string | null = null) {
         );
     `);
 
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+    `);
+
     console.log("[WorshipCuePro] Database initialized successfully.");
     return true;
   } catch (error) {

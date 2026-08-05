@@ -19,7 +19,7 @@
 
     let scrollContainer: HTMLDivElement | null = $state(null);
 
-    // Watch active slide ID and smoothly scroll the active section into view
+    // Watch active slide ID and smoothly scroll the active section and slide into view
     $effect(() => {
         if (
             presentation.activeSlideId &&
@@ -35,6 +35,7 @@
                 );
 
                 if (activeSection) {
+                    // --- 1. Vertical Auto-Scroll (Section Level) ---
                     const activeElement = document.getElementById(
                         `section-for-${activeSection.id}`,
                     );
@@ -52,6 +53,37 @@
                         if (!isVisible) {
                             scrollContainer.scrollTo({
                                 top: scrollContainer.scrollTop + offset - 40,
+                                behavior: "smooth",
+                            });
+                        }
+                    }
+
+                    // --- 2. Horizontal Auto-Scroll (Slide Level) ---
+                    const horizontalContainer = document.getElementById(
+                        `scroll-x-for-${activeSection.id}`,
+                    );
+                    const activeSlideElement = document.getElementById(
+                        `slide-${presentation.activeSlideId}`,
+                    );
+
+                    if (horizontalContainer && activeSlideElement) {
+                        const containerLeft =
+                            horizontalContainer.getBoundingClientRect().left;
+                        const elementLeft =
+                            activeSlideElement.getBoundingClientRect().left;
+                        const offsetLeft = elementLeft - containerLeft;
+
+                        const isVisibleX =
+                            offsetLeft >= 0 &&
+                            offsetLeft + activeSlideElement.offsetWidth <=
+                                horizontalContainer.clientWidth;
+
+                        if (!isVisibleX) {
+                            horizontalContainer.scrollTo({
+                                left:
+                                    horizontalContainer.scrollLeft +
+                                    offsetLeft -
+                                    40, // 40px buffer
                                 behavior: "smooth",
                             });
                         }
@@ -129,11 +161,15 @@
                         </div>
 
                         <!-- Horizontal Slide Strip -->
+                        <!-- ADDED ID for horizontal scrolling -->
                         <div
-                            class="flex flex-nowrap overflow-x-auto gap-3 pb-3 custom-scrollbar"
+                            id={`scroll-x-for-${section.id}`}
+                            class="flex flex-nowrap overflow-x-auto gap-3 pb-3 custom-scrollbar scroll-smooth"
                         >
                             {#each section.slides as slide}
+                                <!-- ADDED ID to slide button -->
                                 <button
+                                    id={`slide-${slide.id}`}
                                     onclick={() =>
                                         presentation.fire(
                                             presentation.activeCue!,

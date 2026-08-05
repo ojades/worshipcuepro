@@ -19,6 +19,36 @@ class SongsState {
     }
   }
 
+  async importSong(data: {
+    title: string;
+    artist: string;
+    raw_lyrics: string;
+  }) {
+    try {
+      const db = getDB();
+      const id = crypto.randomUUID();
+
+      await db.execute(
+        "INSERT INTO songs (id, title, artist, lines_per_slide, raw_lyrics) VALUES ($1, $2, $3, $4, $5)",
+        [id, data.title, data.artist, 0, data.raw_lyrics],
+      );
+
+      await this.load();
+      systemState.addAlert({
+        message: "Song imported successfully.",
+        type: "success",
+      });
+      return id;
+    } catch (e) {
+      console.error("Failed to import song:", e);
+      systemState.addAlert({
+        message: "Failed to import song.",
+        type: "error",
+      });
+      return null;
+    }
+  }
+
   async create() {
     try {
       const db = getDB();

@@ -9,9 +9,11 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { songsState } from "$lib/state/songs.svelte";
     import { parseLyrics } from "$lib/utils/lyrics";
+    import SongImport from "$lib/components/lyrics/SongImport.svelte";
 
     let selectedSongId = $state<string | null>(null);
     let forceEditMode = $state(false);
+    let showImportModal = $state(false);
 
     // Map DB models to the Library UI
     let songList = $derived(
@@ -71,6 +73,7 @@
                 forceEditMode = false;
             }}
             onAddSong={handleAddSong}
+            onOpenImport={() => (showImportModal = true)}
         />
     </div>
 
@@ -87,3 +90,14 @@
         />
     </div>
 </div>
+{#if showImportModal}
+    <SongImport
+        onClose={(importedId) => {
+            showImportModal = false;
+            if (importedId) {
+                selectedSongId = importedId;
+                forceEditMode = false;
+            }
+        }}
+    />
+{/if}

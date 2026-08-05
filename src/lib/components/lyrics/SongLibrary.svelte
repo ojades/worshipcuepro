@@ -1,6 +1,6 @@
 <!-- src/lib/components/lyrics/SongLibrary.svelte -->
 <script lang="ts">
-    import { Search, Plus, ListPlus } from "@lucide/svelte";
+    import { Search, Plus, ListPlus, CloudDownload } from "@lucide/svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import { playlists } from "$lib/state/playlists.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
@@ -17,11 +17,13 @@
         selectedSongId = null,
         onSongChange,
         onAddSong,
+        onOpenImport,
     } = $props<{
         songs: Song[];
         selectedSongId: string | null;
         onSongChange: (id: string) => void;
         onAddSong: () => void;
+        onOpenImport: () => void;
     }>();
 
     let searchQuery = $state("");
@@ -51,15 +53,26 @@
             >
                 Song Library
             </h2>
-            <Button
-                variant="primary"
-                icon={Plus}
-                onclick={onAddSong}
-                class="py-1.5 px-3 text-xs"
-            >
-                <Plus size={14} />
-                Add
-            </Button>
+            <div class="flex items-center gap-2">
+                <Button
+                    variant="secondary"
+                    onclick={onOpenImport}
+                    class="py-1.5 px-3 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                    title="Import from Genius"
+                >
+                    <CloudDownload size={14} class="mr-1" />
+                    Import
+                </Button>
+
+                <Button
+                    variant="primary"
+                    onclick={onAddSong}
+                    class="py-1.5 px-3 text-xs"
+                >
+                    <Plus size={14} class="mr-1" />
+                    Add
+                </Button>
+            </div>
         </div>
 
         <!-- Search Input -->

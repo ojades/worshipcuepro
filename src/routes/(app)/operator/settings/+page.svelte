@@ -13,6 +13,7 @@
         Info,
         Cast,
     } from "@lucide/svelte";
+    import Integrations from "$lib/components/layout/settings/Integrations.svelte";
 
     type Category =
         | "workspace"
@@ -84,6 +85,8 @@
             <BibleSettings />
         {:else if activeCategory === "display"}
             <RemoteDisplay />
+        {:else if activeCategory === "integrations"}
+            <Integrations />
         {:else if activeCategory === "about"}
             <div class="max-w-2xl animate-in fade-in duration-300 space-y-4">
                 <h1 class="text-2xl font-bold text-foreground mb-2">About</h1>
