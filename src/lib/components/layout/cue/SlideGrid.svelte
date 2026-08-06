@@ -135,7 +135,7 @@
             <!-- Slides Grid -->
             <div
                 bind:this={scrollContainer}
-                class="flex-1 overflow-y-auto min-h-0 space-y-6 pb-6 scroll-smooth custom-scrollbar"
+                class="flex-1 overflow-y-auto min-h-0 space-y-6 pb-6 scroll-smooth scrollbar-none"
             >
                 {#each presentation.activeCue.sections as section}
                     {@const isActiveSection = section.slides.some(
@@ -164,7 +164,7 @@
                         <!-- ADDED ID for horizontal scrolling -->
                         <div
                             id={`scroll-x-for-${section.id}`}
-                            class="flex flex-nowrap overflow-x-auto gap-3 pb-3 custom-scrollbar scroll-smooth"
+                            class="flex flex-nowrap overflow-x-auto gap-3 pb-3 scrollbar-none scroll-smooth"
                         >
                             {#each section.slides as slide}
                                 <!-- ADDED ID to slide button -->

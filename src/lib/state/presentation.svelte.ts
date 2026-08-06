@@ -18,7 +18,11 @@ export class PresentationState {
   isBlackout = $state(false);
   isTextCleared = $state(false);
   isBackgroundCleared = $state(false);
-  currentBackground = $state<{ url: string; type: string } | null>(null);
+  currentBackground = $state<{
+    url: string;
+    type: string;
+    playbackRate?: number;
+  } | null>(null);
   linesPerSlide = $state<number>(settingsState.config?.linesPerSlide || 0);
   projectorConfig = $state<DisplayConfig | null>({
     textScale: settingsState.config.projector?.textScale,
@@ -408,12 +412,14 @@ export class PresentationState {
         textVAlign: settingsState.config.projector?.textVAlign,
         referencePosition: settingsState.config.projector?.referencePosition,
         textFormat: settingsState.config.projector?.textFormat,
+        vGap: settingsState.config.projector?.vGap,
       },
       stage: {
         textScale: settingsState.config.stage?.textScale,
         textVAlign: settingsState.config.stage?.textVAlign,
         referencePosition: settingsState.config.stage?.referencePosition,
         textFormat: settingsState.config.stage?.textFormat,
+        vGap: settingsState.config.stage?.vGap,
       },
     };
 

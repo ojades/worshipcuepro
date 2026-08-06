@@ -2,7 +2,7 @@
 export interface PresentationPayload {
   liveText: string;
   nextText: string;
-  liveBackground: { url: string; type: string } | null;
+  liveBackground: { url: string; type: string; playbackRate?: number } | null;
   isBlackout: boolean;
   isTextCleared: boolean;
   liveReference?: string | null;
@@ -15,6 +15,7 @@ export interface PresentationPayload {
 export interface MediaType {
   type: "image" | "video";
   url: string;
+  playbackRate?: number;
 }
 
 export interface Slide {
@@ -65,6 +66,7 @@ export interface DisplayConfig {
   textVAlign?: "top" | "middle" | "bottom";
   referencePosition?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
   textFormat?: TextFormatConfig;
+  vGap?: number;
 }
 
 export interface AppSettings {

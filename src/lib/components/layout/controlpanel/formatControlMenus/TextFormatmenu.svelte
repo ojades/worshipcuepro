@@ -34,8 +34,8 @@
         </button>
     </div>
 
-    <!-- Active Form Controls (Scrolling Container if needed) -->
-    <div class="max-h-[50vh] overflow-y-auto custom-scrollbar">
+    <!-- Active Form Controls (Capped height to prevent covering preview) -->
+    <div class="max-h-[280px] overflow-y-auto scrollbar-none">
         <DisplayFormatForm target={activeTab} />
     </div>
 

@@ -9,6 +9,7 @@
     import NKJV from "$lib/data/bibles/NKJV.json";
     import NIV from "$lib/data/bibles/NIV.json";
     import ERV from "$lib/data/bibles/ERV.json";
+    import AMPC from "$lib/data/bibles/AMPC.xml?raw";
 
     import { songsState } from "$lib/state/songs.svelte";
     import { media } from "$lib/state/media.svelte";
@@ -49,6 +50,9 @@
 
             await updateStatus("Importing ERV...");
             await bibleState.importSystemBible(ERV);
+
+            await updateStatus("Importing AMPC...");
+            await bibleState.importXmlBible(AMPC, "AMPC");
 
             await updateStatus("Loading Libraries...");
             await Promise.all([

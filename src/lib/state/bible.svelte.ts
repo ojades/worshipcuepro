@@ -258,7 +258,7 @@ class BibleState {
         id: prefixedId,
         provider: "system",
         originalId: versionAbbr,
-        name: `${versionAbbr} (Local)`,
+        name: jsonData[0].name || `${versionAbbr} (Local)`,
         abbreviation: versionAbbr,
         language: jsonData[0].language || "eng",
       });
@@ -353,6 +353,92 @@ class BibleState {
     console.log(`[System Bible] ${versionAbbr} import complete!`);
 
     // await this.loadVersions();
+  }
+
+  /**
+   * Parses an XML Bible file and feeds it into the system database importer.
+   */
+  async importXmlBible(xmlString: string, customAbbreviation?: string) {
+    console.log("[System Bible] Parsing XML...");
+
+    // 1. Parse the XML string into a DOM Document
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlString, "application/xml");
+
+    const parseError = doc.querySelector("parsererror");
+    if (parseError) {
+      throw new Error("Failed to parse XML file. Invalid format.");
+    }
+
+    // 2. Extract Translation Info
+    const bibleNode = doc.querySelector("bible");
+    const translationName =
+      bibleNode?.getAttribute("translation") || "Unknown XML Bible";
+
+    // Auto-generate an abbreviation if none is provided (e.g., "English Amplified Classic" -> "EAC")
+    const abbreviation =
+      customAbbreviation ||
+      translationName
+        .split(" ")
+        .map((w) => w[0])
+        .join("")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .substring(0, 5) ||
+      "XML";
+
+    const jsonData: any[] = [];
+
+    // 3. Traverse the XML nodes: Book -> Chapter -> Verse
+    const books = doc.querySelectorAll("book");
+
+    books.forEach((bookNode) => {
+      const bookNumStr = bookNode.getAttribute("number");
+      if (!bookNumStr) return;
+
+      const bookNum = parseInt(bookNumStr, 10);
+
+      const chapters = bookNode.querySelectorAll("chapter");
+      chapters.forEach((chapterNode) => {
+        const chapNumStr = chapterNode.getAttribute("number");
+        if (!chapNumStr) return;
+
+        const chapNum = parseInt(chapNumStr, 10);
+
+        const verses = chapterNode.querySelectorAll("verse");
+        verses.forEach((verseNode) => {
+          const verseNumStr = verseNode.getAttribute("number");
+          if (!verseNumStr) return;
+
+          const verseNum = parseInt(verseNumStr, 10);
+          const text = verseNode.textContent?.trim();
+
+          // Push to the flat array format expected by `importSystemBible`
+          if (text) {
+            jsonData.push({
+              version: abbreviation,
+              name: translationName,
+              language: "eng",
+              book: bookNum,
+              chapter: chapNum,
+              verse: verseNum,
+              text: text,
+            });
+          }
+        });
+      });
+    });
+
+    if (jsonData.length === 0) {
+      throw new Error("No verses were found in the provided XML file.");
+    }
+
+    console.log(
+      `[System Bible] XML parsed. Found ${jsonData.length} verses. Routing to DB Importer...`,
+    );
+
+    // 4. Pass the mapped data to the existing highly-optimized DB importer
+    await this.importSystemBible(jsonData);
   }
 
   async goToReference(

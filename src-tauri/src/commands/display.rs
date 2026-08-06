@@ -59,15 +59,18 @@ pub async fn launch_projector(app: AppHandle, monitor_name: Option<String>) -> R
         WebviewUrl::App("projector".into()),
     )
     .title("WorshipCuePro Projector")
-    .decorations(false);
+    .decorations(false)
+    .fullscreen(true)
+    .always_on_top(true);
 
+    // Move the window to the exact coordinates of the target monitor before building
     if let Some(monitor) = &target_monitor {
         let pos = monitor.position();
         builder = builder.position(pos.x as f64, pos.y as f64);
     }
 
-    let window = builder.build().map_err(|e| e.to_string())?;
-    window.set_fullscreen(true).map_err(|e| e.to_string())?;
+    // Build the window directly into its fullscreen state
+    builder.build().map_err(|e| e.to_string())?;
 
     Ok(())
 }

@@ -35,6 +35,7 @@
             --stroke-color: ${display.stage?.textFormat?.textStrokeColor ?? "#000000"};
             --font-scale: ${(display.stage?.textScale ?? 1) * (display.stage?.textFormat?.fontSizeScale ?? 1)};
             --drop-shadow: ${display.stage?.textFormat?.dropShadow ? "drop-shadow(0 4px 6px rgba(0,0,0,0.8))" : "none"};
+            --v-gap: ${display.stage?.vGap ?? 0}cqh;
         `);
 
     // Dynamic horizontal alignment mapping
@@ -53,9 +54,9 @@
     let verticalAlignmentClass = $derived.by(() => {
         switch (display.stage?.textVAlign) {
             case "top":
-                return "justify-start pt-[4cqh]";
+                return "justify-start cq-pt";
             case "bottom":
-                return "justify-end pb-[4cqh]";
+                return "justify-end cq-pb";
             case "middle":
             default:
                 return "justify-center";
@@ -331,6 +332,12 @@
     }
     .cq-p {
         padding: 4cqw;
+    }
+    .cq-pt {
+        padding-top: var(--v-gap, 0cqh);
+    }
+    .cq-pb {
+        padding-bottom: var(--v-gap, 0cqh);
     }
     .cq-gap {
         gap: 1cqw;

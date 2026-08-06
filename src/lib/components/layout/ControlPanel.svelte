@@ -32,6 +32,7 @@
             textVAlign: settingsState.config.stage?.textVAlign,
             referencePosition: settingsState.config.stage?.referencePosition,
             textFormat: settingsState.config.stage?.textFormat,
+            vGap: settingsState.config.stage?.vGap,
         },
         projector: {
             textScale: settingsState.config.projector?.textScale,
@@ -39,6 +40,7 @@
             referencePosition:
                 settingsState.config.projector?.referencePosition,
             textFormat: settingsState.config.projector?.textFormat,
+            vGap: settingsState.config.projector?.vGap,
         },
         // textScale: (settingsState.config as any).textScale ?? 1.0,
         // stageTextScale: (settingsState.config as any).stageTextScale ?? 1.0,

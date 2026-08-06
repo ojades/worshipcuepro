@@ -39,6 +39,7 @@
             --stroke-color: ${display.projector?.textFormat?.textStrokeColor ?? "#000000"};
             --font-scale: ${(display.projector?.textScale ?? 1) * (display.projector?.textFormat?.fontSizeScale ?? 1)};
             --drop-shadow: ${display.projector?.textFormat?.dropShadow ? "drop-shadow(0 4px 6px rgba(0,0,0,0.8))" : "none"};
+            --v-gap: ${display.projector?.vGap ?? 5}cqh;
         `);
 
     // Dynamic classes
@@ -87,6 +88,15 @@
     let speakerTimerText = $state("");
     let isSpeakerOverrun = $state(false);
     let timerInterval: ReturnType<typeof setInterval>;
+
+    function setPlaybackRate(node: HTMLVideoElement, rate?: number) {
+        node.playbackRate = rate ?? 1.0;
+        return {
+            update(newRate?: number) {
+                node.playbackRate = newRate ?? 1.0;
+            },
+        };
+    }
 
     function formatTime(ms: number) {
         const totalSeconds = Math.floor(Math.abs(ms) / 1000);
@@ -142,6 +152,8 @@
             {#key display.liveBackground.url}
                 <video
                     src={display.liveBackground.url}
+                    use:setPlaybackRate={display.liveBackground.playbackRate ??
+                        1.0}
                     class="absolute inset-0 w-full h-full object-cover z-0"
                     autoplay
                     loop
@@ -172,6 +184,8 @@
                         <!-- svelte-ignore a11y_media_has_caption -->
                         <video
                             src={display.liveMedia.url}
+                            use:setPlaybackRate={display.liveMedia
+                                .playbackRate ?? 1.0}
                             class="absolute inset-0 w-full h-screen object-cover z-10"
                             autoplay
                         ></video>
@@ -286,7 +300,7 @@
         font-family: var(--font-family);
         font-weight: var(--font-weight);
 
-        font-size: calc(3cqw * var(--font-scale));
+        font-size: calc(4.5cqw * var(--font-scale));
 
         -webkit-text-stroke: calc(var(--stroke-width) * 0.5) var(--stroke-color);
         paint-order: stroke fill;
@@ -298,16 +312,16 @@
         padding-right: 5cqw;
     }
     .cq-pt {
-        padding-top: 2cqh;
+        padding-top: var(--v-gap, 5cqh);
     }
     .cq-pb {
-        padding-bottom: 2cqh;
+        padding-bottom: var(--v-gap, 5cqh);
     }
     .cq-pb-offset {
         padding-bottom: 10cqh;
     }
     .cq-pos-bottom {
-        bottom: 5cqh;
+        bottom: 1cqh;
     }
     .cq-pos-top {
         top: 5cqh;

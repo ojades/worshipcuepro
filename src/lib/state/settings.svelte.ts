@@ -31,12 +31,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   projector: {
     textScale: 1,
     textVAlign: "top",
+    vGap: 5,
     referencePosition: "bottom-right",
     textFormat: DEFAULT_FORMAT,
   },
   stage: {
     textScale: 1,
     textVAlign: "middle",
+    vGap: 0,
     referencePosition: "bottom-right",
     textFormat: {
       ...DEFAULT_FORMAT,

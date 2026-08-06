@@ -8,6 +8,7 @@
         Image as ImageIcon,
         Video,
         ListPlus,
+        Gauge,
     } from "@lucide/svelte";
     import { media } from "$lib/state/media.svelte";
     import { onMount } from "svelte";
@@ -23,6 +24,34 @@
     let mediaMetadata = $state<
         Record<string, { dimensions?: string; duration?: string }>
     >({});
+
+    let activeVideoRate = $derived(
+        (presentation.liveMedia?.type === "video"
+            ? presentation.liveMedia.playbackRate
+            : null) ??
+            (presentation.liveBackground?.type === "video"
+                ? presentation.liveBackground.playbackRate
+                : null) ??
+            1.0,
+    );
+
+    function updatePlaybackRate(newRate: number) {
+        // Update whichever media layer is currently holding a video
+        if (presentation.liveMedia && presentation.liveMedia.type === "video") {
+            presentation.liveMedia.playbackRate = newRate;
+        }
+        if (
+            presentation.liveBackground &&
+            presentation.liveBackground.type === "video"
+        ) {
+            presentation.liveBackground.playbackRate = newRate;
+        }
+
+        presentation.broadcastState();
+        // Note: If you have a manual sync/broadcast method in your presentation state,
+        // you may need to call it here (e.g., presentation.broadcast()) depending on how
+        // your state synchronizes with the Tauri windows.
+    }
 
     // Load media on mount
     onMount(() => {
@@ -103,6 +132,31 @@
 
                 <!-- Actions -->
                 <div class="flex gap-3 items-center">
+                    {#if presentation.liveBackground?.type === "video" || presentation.liveMedia?.type === "video"}
+                        <div
+                            class="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 animate-in fade-in slide-in-from-right-4 duration-300"
+                        >
+                            <Gauge size={16} class="text-violet-500" />
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="2.5"
+                                step="0.1"
+                                value={activeVideoRate}
+                                oninput={(e) =>
+                                    updatePlaybackRate(
+                                        parseFloat(e.currentTarget.value),
+                                    )}
+                                class="w-24 accent-violet-500 cursor-pointer"
+                                title="Video Playback Speed"
+                            />
+                            <div
+                                class="text-xs font-mono font-medium text-zinc-300 w-8 text-right bg-zinc-950 px-1 py-0.5 rounded"
+                            >
+                                {activeVideoRate.toFixed(1)}x
+                            </div>
+                        </div>
+                    {/if}
                     <!-- Search -->
                     <div class="relative">
                         <Search

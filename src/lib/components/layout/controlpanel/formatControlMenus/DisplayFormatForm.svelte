@@ -50,7 +50,8 @@
         </label>
         <select
             id="font-family"
-            value={formatConfig?.fontFamily || fontState.availableFonts[0]}
+            value={formatConfig?.fontFamily ||
+                fontState.availableFonts[0]?.family}
             onchange={(e) => updateFormat("fontFamily", e.currentTarget.value)}
             class="w-full bg-zinc-900 border border-border rounded-lg px-3 py-2 text-xs text-foreground outline-none focus:border-neon-violet transition-colors cursor-pointer"
         >
@@ -63,9 +64,8 @@
         </select>
     </div>
 
-    <!-- Row 2: Font Weight & Text Scale (Side-by-side to save space) -->
+    <!-- Row 2: Font Weight & Text Scale -->
     <div class="flex gap-4">
-        <!-- Font Weight -->
         <div class="flex-1 space-y-1.5">
             <label
                 for="font-weight"
@@ -88,17 +88,14 @@
             </select>
         </div>
 
-        <!-- Font Scale -->
         <div class="flex-1 space-y-1.5">
             <div class="flex justify-between items-center h-[14px]">
                 <label
                     for="font-scale"
                     class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+                    >Font Scale</label
                 >
-                    Font Scale
-                </label>
                 <span
-                    id="font-scale"
                     class="text-[10px] font-mono {target === 'projector'
                         ? 'text-neon-violet'
                         : 'text-neon-cyan'}"
@@ -126,54 +123,22 @@
         </div>
     </div>
 
-    <!-- Row 3: Alignment (Horizontal & Vertical) -->
+    <!-- Row 3: Vertical Align & Vertical Gap -->
     <div class="flex gap-4">
-        <!-- Horizontal -->
-        <div class="flex-1 space-y-1.5">
+        <!-- Vertical Align -->
+        <div class="flex-[1.5] space-y-1.5">
             <label
-                for="text-align"
                 class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+                >Vertical Align</label
             >
-                Align
-            </label>
-            <div
-                id="text-align"
-                class="flex bg-zinc-900 rounded-md border border-border p-0.5"
-            >
-                {#each [{ icon: AlignLeft, value: "left" }, { icon: AlignCenter, value: "center" }, { icon: AlignRight, value: "right" }] as align}
-                    <button
-                        onclick={() => updateFormat("textAlign", align.value)}
-                        class="flex-1 py-1.5 flex justify-center rounded-sm transition-colors {formatConfig?.textAlign ===
-                        align.value
-                            ? 'bg-zinc-800 text-foreground'
-                            : 'text-zinc-500 hover:text-zinc-300'}"
-                    >
-                        <align.icon size={14} />
-                    </button>
-                {/each}
-            </div>
-        </div>
-
-        <!-- Vertical -->
-        <div class="flex-1 space-y-1.5">
-            <label
-                for="valign"
-                class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
-            >
-                Vertical
-            </label>
-            <div
-                id="valign"
-                class="flex bg-zinc-900 rounded-md border border-border p-0.5"
-            >
+            <div class="flex bg-zinc-900 rounded-md border border-border p-0.5">
                 <button
                     class="flex-1 py-1.5 flex justify-center rounded-sm transition-colors {displayConfig?.textVAlign ===
                     'top'
                         ? 'bg-zinc-800 text-foreground'
                         : 'text-zinc-500 hover:text-zinc-300'}"
                     onclick={() => updateDisplay("textVAlign", "top")}
-                    title="Top Align"
-                    ><AlignVerticalJustifyStart size={14} /></button
+                    title="Top"><AlignVerticalJustifyStart size={14} /></button
                 >
                 <button
                     class="flex-1 py-1.5 flex justify-center rounded-sm transition-colors {displayConfig?.textVAlign ===
@@ -181,7 +146,7 @@
                         ? 'bg-zinc-800 text-foreground'
                         : 'text-zinc-500 hover:text-zinc-300'}"
                     onclick={() => updateDisplay("textVAlign", "middle")}
-                    title="Middle Align"
+                    title="Middle"
                     ><AlignVerticalJustifyCenter size={14} /></button
                 >
                 <button
@@ -190,39 +155,89 @@
                         ? 'bg-zinc-800 text-foreground'
                         : 'text-zinc-500 hover:text-zinc-300'}"
                     onclick={() => updateDisplay("textVAlign", "bottom")}
-                    title="Bottom Align"
-                    ><AlignVerticalJustifyEnd size={14} /></button
+                    title="Bottom"><AlignVerticalJustifyEnd size={14} /></button
                 >
+            </div>
+        </div>
+
+        <!-- Vertical Gap (Dims out if aligned to middle) -->
+        <div
+            class="flex-1 space-y-1.5 transition-opacity {displayConfig?.textVAlign ===
+            'middle'
+                ? 'opacity-30 pointer-events-none'
+                : ''}"
+        >
+            <div class="flex justify-between items-center h-[14px]">
+                <label
+                    class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+                    >Top/Btm Gap</label
+                >
+                <span
+                    class="text-[10px] font-mono {target === 'projector'
+                        ? 'text-neon-violet'
+                        : 'text-neon-cyan'}"
+                >
+                    {displayConfig?.vGap ?? 0}
+                </span>
+            </div>
+            <div class="flex items-center h-[26px]">
+                <input
+                    type="range"
+                    min="0"
+                    max="30"
+                    step="1"
+                    value={displayConfig?.vGap ?? 0}
+                    oninput={(e) =>
+                        updateDisplay("vGap", parseInt(e.currentTarget.value))}
+                    class="w-full {target === 'projector'
+                        ? 'accent-neon-violet'
+                        : 'accent-neon-cyan'}"
+                />
             </div>
         </div>
     </div>
 
-    <!-- Row 4: Capitalization -->
-    <div class="space-y-1.5">
-        <label
-            for="capitalization"
-            class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
-        >
-            Capitalization
-        </label>
-        <div
-            id="capitalization"
-            class="grid grid-cols-4 gap-1 bg-zinc-900 p-0.5 rounded-md border border-border"
-        >
-            {#each [{ label: "AA", value: "uppercase", title: "UPPERCASE" }, { label: "Aa", value: "capitalize", title: "Capitalize Words" }, { label: "aa", value: "lowercase", title: "lowercase" }, { label: "As-is", value: "none", title: "Original Text" }] as mode}
-                <button
-                    onclick={() => updateFormat("textTransform", mode.value)}
-                    class="py-1 text-xs font-semibold rounded-sm transition-colors {formatConfig?.textTransform ===
-                    mode.value
-                        ? target === 'projector'
-                            ? 'bg-neon-violet/20 text-neon-violet'
-                            : 'bg-neon-cyan/20 text-neon-cyan'
-                        : 'text-zinc-500 hover:text-zinc-300'}"
-                    title={mode.title}
-                >
-                    {mode.label}
-                </button>
-            {/each}
+    <!-- Row 4: Horizontal Align & Capitalization -->
+    <div class="flex gap-4">
+        <div class="flex-1 space-y-1.5">
+            <label
+                class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+                >Horizontal</label
+            >
+            <div class="flex bg-zinc-900 rounded-md border border-border p-0.5">
+                {#each [{ icon: AlignLeft, value: "left" }, { icon: AlignCenter, value: "center" }, { icon: AlignRight, value: "right" }] as align}
+                    <button
+                        onclick={() => updateFormat("textAlign", align.value)}
+                        class="flex-1 py-1.5 flex justify-center rounded-sm transition-colors {formatConfig?.textAlign ===
+                        align.value
+                            ? 'bg-zinc-800 text-foreground'
+                            : 'text-zinc-500 hover:text-zinc-300'}"
+                        ><align.icon size={14} /></button
+                    >
+                {/each}
+            </div>
+        </div>
+
+        <div class="flex-[1.5] space-y-1.5">
+            <label
+                class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
+                >Capitalize</label
+            >
+            <div class="flex bg-zinc-900 p-0.5 rounded-md border border-border">
+                {#each [{ label: "AA", value: "uppercase" }, { label: "Aa", value: "capitalize" }, { label: "aa", value: "lowercase" }, { label: "As-is", value: "none" }] as mode}
+                    <button
+                        onclick={() =>
+                            updateFormat("textTransform", mode.value)}
+                        class="flex-1 py-1 text-xs font-semibold rounded-sm transition-colors {formatConfig?.textTransform ===
+                        mode.value
+                            ? target === 'projector'
+                                ? 'bg-neon-violet/20 text-neon-violet'
+                                : 'bg-neon-cyan/20 text-neon-cyan'
+                            : 'text-zinc-500 hover:text-zinc-300'}"
+                        >{mode.label}</button
+                    >
+                {/each}
+            </div>
         </div>
     </div>
 
