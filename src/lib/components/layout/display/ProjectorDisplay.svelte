@@ -1,7 +1,12 @@
+<!-- /src/lib/components/layout/display/ProjectorDisplay.svelte -->
 <script lang="ts">
     import { settingsState } from "$lib/state/settings.svelte";
-    import type { PresentationPayload } from "$lib/types/models";
+    import type {
+        PresentationPayload,
+        TextFormatConfig,
+    } from "$lib/types/models";
     import { onMount, onDestroy } from "svelte";
+
     export interface ExtendedPayload extends PresentationPayload {
         liveReference?: string | null;
 
@@ -21,6 +26,21 @@
         display: ExtendedPayload;
     }>();
 
+    // Convert formatting config to standard CSS variables
+    // We multiply the payload's textScale by the global settings fontSizeScale
+    let styleString = $derived(`
+            --font-family: "${display.projector?.textFormat?.fontFamily ?? "sans-serif"}", sans-serif;
+            --text-transform: ${display.projector?.textFormat?.textTransform ?? "uppercase"};
+            --font-weight: ${display.projector?.textFormat?.fontWeight ?? "bold"};
+            --letter-spacing: ${display.projector?.textFormat?.letterSpacing ?? 0}px;
+            --line-height: ${display.projector?.textFormat?.lineHeight ?? 1.2};
+            --text-align: ${display.projector?.textFormat?.textAlign ?? "center"};
+            --stroke-width: ${display.projector?.textFormat?.textStrokeWidth ?? 2}px;
+            --stroke-color: ${display.projector?.textFormat?.textStrokeColor ?? "#000000"};
+            --font-scale: ${(display.projector?.textScale ?? 1) * (display.projector?.textFormat?.fontSizeScale ?? 1)};
+            --drop-shadow: ${display.projector?.textFormat?.dropShadow ? "drop-shadow(0 4px 6px rgba(0,0,0,0.8))" : "none"};
+        `);
+
     // Dynamic classes
     let alignmentClass = $derived.by(() => {
         switch (display.projector?.textVAlign) {
@@ -31,6 +51,18 @@
             case "middle":
             default:
                 return "justify-center";
+        }
+    });
+
+    let horizontalAlignmentClass = $derived.by(() => {
+        switch (display.projector?.textFormat?.textAlign) {
+            case "left":
+                return "items-start";
+            case "right":
+                return "items-end";
+            case "center":
+            default:
+                return "items-center";
         }
     });
 
@@ -102,6 +134,7 @@
 <div
     class="display-container absolute inset-0 overflow-hidden bg-black transition-opacity duration-500"
     class:opacity-0={display.isBlackout}
+    style={styleString}
 >
     <!-- 1. Background Layer -->
     {#if display.liveBackground}
@@ -126,10 +159,12 @@
 
     <!-- 2. Main Text / Media Layer -->
     <div
-        class="absolute inset-0 z-10 flex flex-col items-center {mediaPaddingClass} transition-opacity duration-300 {alignmentClass}"
+        class="absolute inset-0 z-10 flex flex-col {mediaPaddingClass} transition-opacity duration-300 {alignmentClass} {horizontalAlignmentClass}"
         class:opacity-0={display.isTextCleared}
     >
-        <div class="relative flex-col w-full flex items-center justify-center">
+        <div
+            class="relative flex-col w-full flex justify-center {horizontalAlignmentClass}"
+        >
             <!-- Foreground Media Handling -->
             {#if display.liveMedia}
                 {#if display.liveMedia.type === "video"}
@@ -152,9 +187,7 @@
                 <!-- Standard Text Handling -->
             {:else if display.liveText}
                 <p
-                    class="text-white cq-pb-offset font-bold text-center leading-tight whitespace-pre-wrap drop-shadow-[0_4px_6px_rgba(0,0,0,0.8)]"
-                    style="font-size: {(display.projector?.textScale ?? 1) *
-                        6}cqw;"
+                    class="slide-text text-white cq-pb-offset whitespace-pre-wrap"
                 >
                     {display.liveText}
                 </p>
@@ -165,11 +198,7 @@
                 <div
                     class="absolute z-20 transition-opacity duration-300 {referencePositionClass}"
                 >
-                    <p
-                        class="text-white/80 font-bold drop-shadow-[0_4px_6px_rgba(0,0,0,0.9)]"
-                        style="font-size: {(display.projector?.textScale ?? 1) *
-                            3}cqw;"
-                    >
+                    <p class="slide-reference text-white/90">
                         {display.liveReference}
                     </p>
                 </div>
@@ -236,6 +265,32 @@
 <style>
     .display-container {
         container-type: size;
+    }
+
+    .slide-text {
+        font-family: var(--font-family);
+        text-transform: var(--text-transform);
+        font-weight: var(--font-weight);
+        letter-spacing: var(--letter-spacing);
+        line-height: var(--line-height);
+        text-align: var(--text-align);
+
+        font-size: calc(6cqw * var(--font-scale));
+
+        -webkit-text-stroke: var(--stroke-width) var(--stroke-color);
+        paint-order: stroke fill;
+        filter: var(--drop-shadow);
+    }
+
+    .slide-reference {
+        font-family: var(--font-family);
+        font-weight: var(--font-weight);
+
+        font-size: calc(3cqw * var(--font-scale));
+
+        -webkit-text-stroke: calc(var(--stroke-width) * 0.5) var(--stroke-color);
+        paint-order: stroke fill;
+        filter: var(--drop-shadow);
     }
 
     .cq-px {

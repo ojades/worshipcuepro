@@ -4,20 +4,18 @@ use axum::{
         ws::{Message, WebSocket},
         State, WebSocketUpgrade,
     },
+    http::{header, StatusCode, Uri},
     response::IntoResponse,
     routing::get,
     Router,
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
+use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::broadcast;
-use tower_http::{
-    cors::CorsLayer,
-    services::{ServeDir, ServeFile},
-};
+use tower_http::cors::CorsLayer;
 
-// This matches your Svelte state exactly
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CueData {
     #[serde(rename = "type")]
@@ -31,18 +29,19 @@ pub struct AppState {
     pub tx: broadcast::Sender<String>,
 }
 
-pub async fn start_server(tx: broadcast::Sender<String>, static_dir: PathBuf) {
+// 1. Define the embedded folder pointing to your SvelteKit build output
+#[derive(RustEmbed)]
+#[folder = "../build/"] // Change to "../dist/" if you use Vite's default output
+struct Assets;
+
+pub async fn start_server(tx: broadcast::Sender<String>) {
     let app_state = Arc::new(AppState { tx });
 
-    // Serve the Svelte files, and fallback to index.html for SPA routing (e.g., /obs)
-    let serve_dir =
-        ServeDir::new(&static_dir).not_found_service(ServeFile::new(static_dir.join("index.html")));
-
     let app = Router::new()
-        // Mount the Svelte app at the root URL
-        .nest_service("/", serve_dir)
-        // Keep the WebSocket route intact
+        // WebSocket route
         .route("/ws", get(ws_handler))
+        // 2. Catch-all fallback route for serving static files from memory
+        .fallback(get(static_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
@@ -55,6 +54,30 @@ pub async fn start_server(tx: broadcast::Sender<String>, static_dir: PathBuf) {
     axum::serve(listener, app).await.unwrap();
 }
 
+// 3. Handler to serve embedded files and handle SPA routing
+async fn static_handler(uri: Uri) -> impl IntoResponse {
+    let path = uri.path().trim_start_matches('/');
+
+    // If the path is empty, default to index.html
+    let path = if path.is_empty() { "index.html" } else { path };
+
+    // Try to get the file from the embedded assets
+    match Assets::get(path) {
+        Some(content) => {
+            let mime = mime_guess::from_path(path).first_or_octet_stream();
+            ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
+        }
+        None => {
+            // SPA Fallback: If file is not found (e.g., /stage), serve index.html
+            if let Some(index) = Assets::get("index.html") {
+                ([(header::CONTENT_TYPE, "text/html")], index.data).into_response()
+            } else {
+                (StatusCode::NOT_FOUND, "404 Not Found").into_response()
+            }
+        }
+    }
+}
+
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
@@ -63,23 +86,20 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let (mut sender, mut receiver) = socket.split();
     let mut rx = state.tx.subscribe();
 
-    // Task 1: Forward broadcast messages to the connected OBS client
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {
             if sender.send(Message::Text(msg.into())).await.is_err() {
-                break; // Client disconnected
+                break;
             }
         }
     });
 
-    // Task 2: Listen for disconnects from the client
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(_)) = receiver.next().await {
-            // We ignore incoming messages from OBS, we just want to keep the connection alive
+            // Keep connection alive
         }
     });
 
-    // If either task fails/closes, abort the other one
     tokio::select! {
         _ = (&mut send_task) => recv_task.abort(),
         _ = (&mut recv_task) => send_task.abort(),

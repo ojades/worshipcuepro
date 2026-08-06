@@ -1,6 +1,7 @@
 <!-- src/lib/components/layout/display/StageDisplay.svelte -->
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
+    import { settingsState } from "$lib/state/settings.svelte";
     import type { ExtendedPayload } from "./ProjectorDisplay.svelte";
 
     type StagePayload = ExtendedPayload & {
@@ -21,6 +22,45 @@
     let { display }: { display: StagePayload } = $props<{
         display: StagePayload;
     }>();
+
+    // Convert formatting config to standard CSS variables for the Stage
+    let styleString = $derived(`
+            --font-family: "${display.stage?.textFormat?.fontFamily ?? "sans-serif"}", sans-serif;
+            --text-transform: ${display.stage?.textFormat?.textTransform ?? "none"};
+            --font-weight: ${display.stage?.textFormat?.fontWeight ?? "bold"};
+            --letter-spacing: ${display.stage?.textFormat?.letterSpacing ?? 0}px;
+            --line-height: ${display.stage?.textFormat?.lineHeight ?? 1.2};
+            --text-align: ${display.stage?.textFormat?.textAlign ?? "center"};
+            --stroke-width: ${display.stage?.textFormat?.textStrokeWidth ?? 0}px;
+            --stroke-color: ${display.stage?.textFormat?.textStrokeColor ?? "#000000"};
+            --font-scale: ${(display.stage?.textScale ?? 1) * (display.stage?.textFormat?.fontSizeScale ?? 1)};
+            --drop-shadow: ${display.stage?.textFormat?.dropShadow ? "drop-shadow(0 4px 6px rgba(0,0,0,0.8))" : "none"};
+        `);
+
+    // Dynamic horizontal alignment mapping
+    let horizontalAlignmentClass = $derived.by(() => {
+        switch (display.stage?.textFormat?.textAlign) {
+            case "left":
+                return "items-start";
+            case "right":
+                return "items-end";
+            case "center":
+            default:
+                return "items-center";
+        }
+    });
+
+    let verticalAlignmentClass = $derived.by(() => {
+        switch (display.stage?.textVAlign) {
+            case "top":
+                return "justify-start pt-[4cqh]";
+            case "bottom":
+                return "justify-end pb-[4cqh]";
+            case "middle":
+            default:
+                return "justify-center";
+        }
+    });
 
     let clockInterval: ReturnType<typeof setInterval>;
 
@@ -100,13 +140,13 @@
 </script>
 
 <div
-    class="stage-container absolute inset-0 overflow-hidden bg-black text-white flex flex-col font-sans transition-opacity duration-300 select-none"
+    class="stage-container absolute inset-0 overflow-hidden bg-black text-white flex flex-col transition-opacity duration-300 select-none"
     class:opacity-0={display.isBlackout}
-    style="--stage-scale: {display.stage?.textScale ?? 1};"
+    style={styleString}
 >
     <!-- Header / Info Bar -->
     <header
-        class="cq-header border-b border-zinc-800 flex items-center justify-between cq-px bg-zinc-950 flex-shrink-0 z-20"
+        class="cq-header border-b border-zinc-800 flex items-center justify-between cq-px bg-zinc-950 flex-shrink-0 z-20 font-sans"
     >
         <div class="flex items-center justify-between cq-gap">
             <span
@@ -116,7 +156,7 @@
             </span>
             {#if display.liveReference}
                 <span
-                    class=" cq-label-next-right text-yellow-300 font-black drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-widest z-10"
+                    class="stage-reference cq-label-next-right text-yellow-300 font-black drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-widest z-10"
                 >
                     {display.liveReference}
                 </span>
@@ -130,10 +170,6 @@
                         class="text-[5cqh] font-black tabular-nums text-white leading-none"
                         >{serviceTimerText}</span
                     >
-                    <!-- <span
-                        class="text-zinc-400 text-[2cqh] font-bold uppercase tracking-widest"
-                        >Service</span
-                    > -->
                 </div>
             {/if}
 
@@ -166,7 +202,7 @@
     <!-- Stage Message Overlay Banner -->
     {#if display.showMessageOnStage && display.stageMessage}
         <div
-            class="absolute top-[14cqh] inset-x-0 z-50 bg-red-600 border-b-[1cqh] border-red-800 text-white py-[4cqh] px-[5cqw] shadow-2xl flex items-center justify-center animate-in slide-in-from-top-full duration-300"
+            class="absolute top-[14cqh] inset-x-0 z-50 bg-red-600 border-b-[1cqh] border-red-800 text-white py-[4cqh] px-[5cqw] shadow-2xl flex items-center justify-center animate-in slide-in-from-top-full duration-300 font-sans"
         >
             <span
                 class="text-[6cqh] font-black uppercase tracking-widest text-center animate-pulse"
@@ -185,7 +221,7 @@
                 : 'flex-[5]'}"
         >
             <div
-                class="live-text-container flex-1 w-full h-full flex items-center justify-center px-4 md:px-12 relative"
+                class="live-text-container flex-1 w-full h-full flex {horizontalAlignmentClass} {verticalAlignmentClass} px-4 md:px-12 relative"
             >
                 <!-- Foreground Media on Stage -->
                 {#if display.liveMedia}
@@ -204,7 +240,7 @@
                         />
                     {/if}
                     <div
-                        class="absolute inset-0 flex flex-col items-center justify-center z-10"
+                        class="absolute inset-0 flex flex-col items-center justify-center z-10 font-sans"
                     >
                         <span
                             class="bg-black/80 text-neon-cyan px-6 py-3 rounded-xl border border-neon-cyan/30 font-black uppercase tracking-[0.2em] cq-text-media-badge shadow-2xl"
@@ -214,7 +250,7 @@
                     </div>
                 {:else if display.liveText}
                     <p
-                        class="font-bold text-center leading-snug whitespace-pre-wrap text-white transition-all duration-300 w-full relative z-10 {getLiveTextScaleClass(
+                        class="stage-slide-text text-white transition-all whitespace-pre-wrap duration-300 w-full relative z-10 {getLiveTextScaleClass(
                             display.liveText,
                         )}"
                     >
@@ -235,11 +271,11 @@
                 class="flex-[2] cq-p flex flex-col relative bg-zinc-900/50 animate-in slide-in-from-bottom-4 z-20"
             >
                 <div
-                    class="next-text-container flex-1 w-full flex items-center justify-center px-8"
+                    class="next-text-container flex-1 w-full flex {horizontalAlignmentClass} justify-center px-8"
                 >
                     {#if display.nextText}
                         <p
-                            class="cq-text-next font-bold text-center leading-tight text-zinc-400 line-clamp-3 w-full"
+                            class="stage-next-text cq-text-next text-zinc-400 line-clamp-3 w-full whitespace-pre-wrap"
                         >
                             {display.nextText}
                         </p>
@@ -260,6 +296,32 @@
     .stage-container {
         container-type: size;
     }
+
+    .stage-slide-text {
+        font-family: var(--font-family);
+        text-transform: var(--text-transform);
+        font-weight: var(--font-weight);
+        letter-spacing: var(--letter-spacing);
+        line-height: var(--line-height);
+        text-align: var(--text-align);
+
+        -webkit-text-stroke: var(--stroke-width) var(--stroke-color);
+        paint-order: stroke fill;
+        filter: var(--drop-shadow);
+    }
+
+    .stage-next-text {
+        font-family: var(--font-family);
+        text-transform: var(--text-transform);
+        font-weight: var(--font-weight);
+        text-align: var(--text-align);
+        letter-spacing: var(--letter-spacing);
+    }
+
+    .stage-reference {
+        font-family: var(--font-family);
+    }
+
     .cq-header {
         height: 14cqh;
     }
@@ -291,19 +353,21 @@
     .next-text-container {
         container-type: size;
     }
+
+    /* Using the combined font-scale variable for dynamic sizing */
     .text-scale-huge {
-        font-size: calc(min(8.5cqw, 35cqh) * var(--stage-scale, 1));
+        font-size: calc(min(8.5cqw, 35cqh) * var(--font-scale, 1));
     }
     .text-scale-large {
-        font-size: calc(min(6.5cqw, 22cqh) * var(--stage-scale, 1));
+        font-size: calc(min(6.5cqw, 22cqh) * var(--font-scale, 1));
     }
     .text-scale-medium {
-        font-size: calc(min(5cqw, 15cqh) * var(--stage-scale, 1));
+        font-size: calc(min(5cqw, 15cqh) * var(--font-scale, 1));
     }
     .text-scale-base {
-        font-size: calc(min(4cqw, 11cqh) * var(--stage-scale, 1));
+        font-size: calc(min(4cqw, 11cqh) * var(--font-scale, 1));
     }
     .cq-text-next {
-        font-size: calc(min(10cqw, 40cqh) * var(--stage-scale, 2));
+        font-size: calc(min(10cqw, 40cqh) * var(--font-scale, 1) * 0.75);
     }
 </style>

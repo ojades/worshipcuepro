@@ -18,6 +18,7 @@
     import OnboardingSetup from "$lib/components/layout/OnboardingSetup.svelte";
     import { exists } from "@tauri-apps/plugin-fs";
     import { dev } from "$app/environment";
+    import { fontState } from "$lib/state/fonts.svelte";
 
     let { children } = $props();
 
@@ -55,6 +56,7 @@
                 media.loadAll(),
                 bibleState.init(),
                 shootState.loadAll(),
+                fontState.loadFonts(),
             ]);
 
             isAppReady = true;
@@ -65,15 +67,44 @@
     }
 
     onMount(async () => {
-        const savedWorkspace = settingsState.config.workspacePath as string;
-        const dirExists = await exists(savedWorkspace);
+        try {
+            const savedWorkspace = settingsState.config
+                ?.workspacePath as string;
+            let dirExists = false;
 
-        if (savedWorkspace && dirExists) {
-            await updateStatus("Connecting to Database...");
-            isDbReady = await initDB(savedWorkspace);
+            // Safely check if the directory exists without halting the app on permission/empty errors
+            if (savedWorkspace) {
+                try {
+                    dirExists = await exists(savedWorkspace);
+                } catch (fsError) {
+                    console.warn(
+                        "Workspace check failed (invalid path or missing permissions):",
+                        fsError,
+                    );
+                    dirExists = false;
+                }
+            }
 
-            if (isDbReady) {
-                await loadAppResources();
+            if (savedWorkspace && dirExists) {
+                await updateStatus("Connecting to Database...");
+                isDbReady = await initDB(savedWorkspace);
+
+                if (isDbReady) {
+                    await loadAppResources();
+                    setTimeout(async () => {
+                        try {
+                            await invoke("close_splashscreen");
+                        } catch (e) {
+                            console.error("Failed to close splash screen:", e);
+                        }
+                    }, 500);
+                } else {
+                    // If DB fails to init, force setup so they aren't stuck
+                    throw new Error("Database initialization returned false");
+                }
+            } else {
+                needsSetup = true;
+                // Close splash screen immediately so user can see onboarding UI
                 setTimeout(async () => {
                     try {
                         await invoke("close_splashscreen");
@@ -82,16 +113,11 @@
                     }
                 }, 500);
             }
-        } else {
+        } catch (fatalError) {
+            console.error("Critical error during app startup:", fatalError);
+            // Emergency fallback to close splash screen so the user can at least see the UI/errors
             needsSetup = true;
-            // Close splash screen immediately so user can see onboarding UI
-            setTimeout(async () => {
-                try {
-                    await invoke("close_splashscreen");
-                } catch (e) {
-                    console.error("Failed to close splash screen:", e);
-                }
-            }, 500);
+            await invoke("close_splashscreen").catch(console.error);
         }
     });
 

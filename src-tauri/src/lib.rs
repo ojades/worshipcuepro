@@ -73,16 +73,9 @@ pub fn run() {
             // Allow Tauri commands to access the sender
             app.manage(ServerState { tx: tx.clone() });
 
-            // Determine where the Svelte static files are located
-            #[cfg(debug_assertions)]
-            let static_dir = std::env::current_dir().unwrap().join("../build"); // Dev mode: look outside the src-tauri folder
-
-            #[cfg(not(debug_assertions))]
-            let static_dir = app.path().resource_dir().unwrap().join("build"); // Prod mode: look inside the bundled resources
-
-            // Spawn the Axum server in the background
+            // Spawn the Axum server in the background (No more static_dir needed!)
             tauri::async_runtime::spawn(async move {
-                obs::start_server(tx, static_dir).await;
+                obs::start_server(tx).await;
             });
 
             Ok(())

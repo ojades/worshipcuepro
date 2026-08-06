@@ -48,10 +48,23 @@ export interface Playlist {
   date?: Date | string;
   cues: Cue[];
 }
+export interface TextFormatConfig {
+  fontFamily: string;
+  fontSizeScale: number; // e.g. 1.0, 1.2
+  textTransform: "none" | "uppercase" | "lowercase" | "capitalize";
+  fontWeight: "normal" | "medium" | "semibold" | "bold" | "800";
+  letterSpacing: number; // in px or em
+  lineHeight: number; // e.g. 1.2
+  textAlign: "left" | "center" | "right";
+  textStrokeWidth: number; // in px
+  textStrokeColor: string;
+  dropShadow: boolean;
+}
 export interface DisplayConfig {
   textScale?: number;
   textVAlign?: "top" | "middle" | "bottom";
   referencePosition?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  textFormat?: TextFormatConfig;
 }
 
 export interface AppSettings {

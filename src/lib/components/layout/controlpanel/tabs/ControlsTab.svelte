@@ -128,7 +128,7 @@
                         onclick={() => controlsState.toggleMessageStage()}
                         class="flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all border {controlsState.showMessageOnStage
                             ? 'bg-neon-cyan/10 text-neon-cyan border-neon-cyan/30 shadow-sm'
-                            : 'bg-zinc-900/50 border-zinc-800 text-muted-foreground hover:text-foreground'}"
+                            : 'bg-zinc-900/50  text-muted-foreground hover:text-foreground'}"
                     >
                         <Monitor size={12} /> Stage
                     </button>

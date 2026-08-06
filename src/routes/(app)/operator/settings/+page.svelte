@@ -14,12 +14,13 @@
         Cast,
     } from "@lucide/svelte";
     import Integrations from "$lib/components/layout/settings/Integrations.svelte";
+    import FontSettings from "$lib/components/layout/settings/FontSettings.svelte";
 
     type Category =
         | "workspace"
         | "bibles"
         | "display"
-        | "defaults"
+        | "fonts"
         | "media"
         | "integrations"
         | "about";
@@ -31,8 +32,8 @@
         { id: "bibles", label: "Bible Translations", icon: BookOpen }, // New Item
         { id: "display", label: "Remote Display", icon: Cast },
         {
-            id: "defaults",
-            label: "Presentation Defaults",
+            id: "fonts",
+            label: "Manage Fonts",
             icon: SlidersHorizontal,
         },
         { id: "media", label: "Media Library", icon: Library },
@@ -85,6 +86,8 @@
             <BibleSettings />
         {:else if activeCategory === "display"}
             <RemoteDisplay />
+        {:else if activeCategory === "fonts"}
+            <FontSettings />
         {:else if activeCategory === "integrations"}
             <Integrations />
         {:else if activeCategory === "about"}

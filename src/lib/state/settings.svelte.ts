@@ -1,8 +1,21 @@
 // src/lib/state/settings.svelte.ts
 import { browser } from "$app/environment";
 import { getDB } from "$lib/db";
-import type { AppSettings } from "$lib/types/models";
+import type { AppSettings, TextFormatConfig } from "$lib/types/models";
 import { mkdir } from "@tauri-apps/plugin-fs";
+
+const DEFAULT_FORMAT: TextFormatConfig = {
+  fontFamily: "sans-serif",
+  fontSizeScale: 1.0,
+  textTransform: "uppercase",
+  fontWeight: "bold",
+  letterSpacing: 0,
+  lineHeight: 1.2,
+  textAlign: "center",
+  textStrokeWidth: 2,
+  textStrokeColor: "#000000",
+  dropShadow: true,
+};
 
 export const DEFAULT_SETTINGS: AppSettings = {
   workspacePath: null,
@@ -19,11 +32,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
     textScale: 1,
     textVAlign: "top",
     referencePosition: "bottom-right",
+    textFormat: DEFAULT_FORMAT,
   },
   stage: {
     textScale: 1,
     textVAlign: "middle",
     referencePosition: "bottom-right",
+    textFormat: {
+      ...DEFAULT_FORMAT,
+      textTransform: "none",
+      textStrokeWidth: 0,
+    },
   },
 };
 

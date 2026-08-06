@@ -31,12 +31,14 @@
             textScale: settingsState.config.stage?.textScale,
             textVAlign: settingsState.config.stage?.textVAlign,
             referencePosition: settingsState.config.stage?.referencePosition,
+            textFormat: settingsState.config.stage?.textFormat,
         },
         projector: {
             textScale: settingsState.config.projector?.textScale,
             textVAlign: settingsState.config.projector?.textVAlign,
             referencePosition:
                 settingsState.config.projector?.referencePosition,
+            textFormat: settingsState.config.projector?.textFormat,
         },
         // textScale: (settingsState.config as any).textScale ?? 1.0,
         // stageTextScale: (settingsState.config as any).stageTextScale ?? 1.0,

@@ -5,6 +5,7 @@
     import ProjectorDisplay, {
         type ExtendedPayload,
     } from "$lib/components/layout/display/ProjectorDisplay.svelte";
+    import { fontState } from "$lib/state/fonts.svelte";
 
     // Store payloads separately
     let presentationPayload = $state<ExtendedPayload>({
@@ -30,6 +31,7 @@
     let unlistenControls: UnlistenFn;
 
     onMount(async () => {
+        await fontState.loadFonts();
         unlistenPresentation = await listen<ExtendedPayload>(
             "presentation-update",
             (event) => {
