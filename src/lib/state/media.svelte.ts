@@ -61,7 +61,7 @@ class MediaState {
 
   async importMedia() {
     const selected = await open({
-      multiple: false,
+      multiple: true,
       filters: [
         {
           name: "All Media",
@@ -87,65 +87,80 @@ class MediaState {
       ],
     });
 
-    if (!selected) return; // User canceled
+    if (!selected) return;
 
-    // Normalize the return object
-    const filePath = typeof selected === "string" ? selected : selected.path;
+    // Tauri returns an array when multiple: true, but let's safely ensure it's an array
+    const files = Array.isArray(selected) ? selected : [selected];
+    if (files.length === 0) return;
 
-    // Extract the full filename (e.g., "background.mp4")
-    const fullFileName = filePath.split(/[/\\]/).pop() || "New Media";
-
-    // Extract just the name without extension for the DB display name
-    const name = fullFileName.replace(/\.[^/.]+$/, "");
-
-    // Get the extension to determine the type
-    const extension = fullFileName.split(".").pop()?.toLowerCase() || "";
-
-    // Check if it's a video; if not, assume it's an image based on our filters
-    const videoExtensions = ["mp4", "webm", "mov"];
-    const mediaType = videoExtensions.includes(extension) ? "video" : "image";
-
+    const db = await this.initDb();
     const workspace = settingsState.config.workspacePath;
-    let dbFilePath = filePath; // Default to absolute path if no workspace exists
+    let mediaDirPath = "";
 
+    // If using a workspace, ensure the directory exists ONCE before the loop
     if (workspace) {
-      try {
-        const mediaDirPath = await join(workspace, "media");
-
-        // Ensure the workspace/media directory exists
-        const dirExists = await exists(mediaDirPath);
-        if (!dirExists) {
-          await mkdir(mediaDirPath, { recursive: true });
-        }
-
-        // Prevent overwriting files with the exact same name
-        let targetFileName = fullFileName;
-        let finalFilePath = await join(mediaDirPath, targetFileName);
-
-        if (await exists(finalFilePath)) {
-          const uniqueId = crypto.randomUUID().split("-")[0];
-          targetFileName = `${name}-${uniqueId}.${extension}`;
-          finalFilePath = await join(mediaDirPath, targetFileName);
-        }
-
-        // Copy the file from the original location to the workspace
-        await copyFile(filePath, finalFilePath);
-
-        // Store ONLY the filename in the database for cross-device compatibility
-        dbFilePath = targetFileName;
-      } catch (err) {
-        console.error("Failed to copy media to workspace:", err);
+      mediaDirPath = await join(workspace, "media");
+      const dirExists = await exists(mediaDirPath);
+      if (!dirExists) {
+        await mkdir(mediaDirPath, { recursive: true });
       }
     }
 
-    const id = crypto.randomUUID();
-    const db = await this.initDb();
+    // Process each file sequentially to avoid file naming race conditions
+    for (const file of files) {
+      // Normalize the return object
+      const filePath = typeof file === "string" ? file : file.path;
 
-    await db.execute(
-      "INSERT INTO media (id, filename, filepath, type) VALUES ($1, $2, $3, $4)",
-      [id, name, dbFilePath, mediaType],
-    );
+      // Extract the full filename (e.g., "background.mp4")
+      const fullFileName = filePath.split(/[/\\]/).pop() || "New Media";
 
+      // Extract just the name without extension for the DB display name
+      const name = fullFileName.replace(/\.[^/.]+$/, "");
+
+      // Get the extension to determine the type
+      const extension = fullFileName.split(".").pop()?.toLowerCase() || "";
+
+      // Check if it's a video; if not, assume it's an image based on our filters
+      const videoExtensions = ["mp4", "webm", "mov"];
+      const mediaType = videoExtensions.includes(extension) ? "video" : "image";
+
+      let dbFilePath = filePath; // Default to absolute path if no workspace exists
+
+      if (workspace) {
+        try {
+          // Prevent overwriting files with the exact same name
+          let targetFileName = fullFileName;
+          let finalFilePath = await join(mediaDirPath, targetFileName);
+
+          if (await exists(finalFilePath)) {
+            const uniqueId = crypto.randomUUID().split("-")[0];
+            targetFileName = `${name}-${uniqueId}.${extension}`;
+            finalFilePath = await join(mediaDirPath, targetFileName);
+          }
+
+          // Copy the file from the original location to the workspace
+          await copyFile(filePath, finalFilePath);
+
+          // Store ONLY the filename in the database for cross-device compatibility
+          dbFilePath = targetFileName;
+        } catch (err) {
+          console.error(
+            `Failed to copy media ${fullFileName} to workspace:`,
+            err,
+          );
+          continue;
+        }
+      }
+
+      const id = crypto.randomUUID();
+
+      await db.execute(
+        "INSERT INTO media (id, filename, filepath, type) VALUES ($1, $2, $3, $4)",
+        [id, name, dbFilePath, mediaType],
+      );
+    }
+
+    // Reload the UI once all files are imported
     await this.loadAll();
   }
 
