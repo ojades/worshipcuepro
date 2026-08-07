@@ -17,6 +17,8 @@
     import Integrations from "$lib/components/layout/settings/Integrations.svelte";
     import FontSettings from "$lib/components/layout/settings/FontSettings.svelte";
     import ObsSettings from "$lib/components/layout/settings/ObsSettings.svelte";
+    import { onMount } from "svelte";
+    import { getVersion } from "@tauri-apps/api/app";
 
     type Category =
         | "workspace"
@@ -29,6 +31,17 @@
         | "about";
 
     let activeCategory = $state<Category>("workspace");
+
+    let appVersion = $state<string>("Loading...");
+
+    onMount(async () => {
+        try {
+            appVersion = await getVersion();
+        } catch (error) {
+            console.error("Failed to get app version", error);
+            appVersion = "Unknown";
+        }
+    });
 
     const menuItems: { id: Category; label: string; icon: any }[] = [
         { id: "workspace", label: "Workspace & Sync", icon: FolderSync },
@@ -104,11 +117,12 @@
                         WorshipCuePro
                     </h2>
                     <p class="text-sm text-muted-foreground mt-1">
-                        Version 0.1.0-alpha
+                        Version {appVersion}
+                        {new Date().getFullYear()}
                     </p>
                     <p class="text-sm text-muted-foreground mt-4">
-                        Offline-first presentation and media delivery system
-                        built with Tauri and SvelteKit.
+                        Offline-first presentation that makes you Worship cues
+                        seamless.
                     </p>
                 </div>
             </div>
