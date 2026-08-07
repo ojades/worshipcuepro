@@ -58,7 +58,7 @@ pub async fn launch_projector(app: AppHandle, monitor_name: Option<String>) -> R
         "projector_window",
         WebviewUrl::App("projector".into()),
     )
-    .title("WorshipCuePro Projector")
+    .title("WorshipCuePro - Audience View")
     .decorations(false)
     .fullscreen(true)
     .always_on_top(true);
@@ -104,16 +104,17 @@ pub async fn launch_stage(app: AppHandle, monitor_name: Option<String>) -> Resul
 
     let mut builder =
         WebviewWindowBuilder::new(&app, "stage_window", WebviewUrl::App("stage".into()))
-            .title("WorshipCuePro Stage Display")
-            .decorations(false);
+            .title("WorshipCuePro - Stage Display")
+            .decorations(false)
+            .fullscreen(true)
+            .always_on_top(true);
 
     if let Some(monitor) = &target_monitor {
         let pos = monitor.position();
         builder = builder.position(pos.x as f64, pos.y as f64);
     }
 
-    let window = builder.build().map_err(|e| e.to_string())?;
-    window.set_fullscreen(true).map_err(|e| e.to_string())?;
+    builder.build().map_err(|e| e.to_string())?;
 
     Ok(())
 }

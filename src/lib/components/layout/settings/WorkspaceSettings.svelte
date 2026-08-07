@@ -1,12 +1,17 @@
 <!-- /src/lib/components/layout/settings/WorkspaceSettings.svelte -->
 <script lang="ts">
-    import { open } from "@tauri-apps/plugin-dialog";
+    import { open, save } from "@tauri-apps/plugin-dialog";
+    import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
     import { systemState } from "$lib/state/system.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import { initDB } from "$lib/db";
+
     import Cloud from "@lucide/svelte/icons/cloud";
     import Info from "@lucide/svelte/icons/info";
     import Eraser from "@lucide/svelte/icons/eraser";
+    import Download from "@lucide/svelte/icons/download";
+    import Upload from "@lucide/svelte/icons/upload";
+    import SettingsIcon from "@lucide/svelte/icons/settings";
 
     let workspacePath = $derived(settingsState.config.workspacePath);
 
@@ -67,9 +72,67 @@
             });
         }
     }
+
+    async function handleExportSettings() {
+        try {
+            const filePath = await save({
+                title: "Export Settings",
+                defaultPath: "worshipcuepro_settings.json",
+                filters: [{ name: "JSON", extensions: ["json"] }],
+            });
+
+            if (filePath) {
+                const settingsData = settingsState.exportSettings();
+                await writeTextFile(filePath, settingsData);
+                systemState.addAlert({
+                    message: "Settings exported successfully.",
+                    type: "success",
+                });
+            }
+        } catch (error) {
+            console.error("Export settings error:", error);
+            systemState.addAlert({
+                message: "Failed to export settings.",
+                type: "error",
+            });
+        }
+    }
+
+    async function handleImportSettings() {
+        try {
+            const selected = await open({
+                multiple: false,
+                title: "Import Settings",
+                filters: [{ name: "JSON", extensions: ["json"] }],
+            });
+
+            if (selected && typeof selected === "string") {
+                const jsonString = await readTextFile(selected);
+                const success = settingsState.importSettings(jsonString);
+
+                if (success) {
+                    systemState.addAlert({
+                        message: "Settings imported successfully.",
+                        type: "success",
+                    });
+                } else {
+                    systemState.addAlert({
+                        message: "Invalid settings file format.",
+                        type: "error",
+                    });
+                }
+            }
+        } catch (error) {
+            console.error("Import settings error:", error);
+            systemState.addAlert({
+                message: "Failed to import settings.",
+                type: "error",
+            });
+        }
+    }
 </script>
 
-<div class="max-w-2xl space-y-8 animate-in fade-in duration-300">
+<div class="max-w-2xl space-y-8 animate-in fade-in duration-300 pb-12">
     <div>
         <h1 class="text-2xl font-bold text-foreground mb-2">
             Workspace & Sync
@@ -120,6 +183,42 @@
                     Reset to Default
                 </button>
             {/if}
+        </div>
+    </div>
+
+    <!-- Settings Backup & Restore Card -->
+    <div
+        class="bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col gap-4"
+    >
+        <div class="flex items-start gap-4">
+            <div class="p-3 bg-blue-500/10 text-blue-500 rounded-lg">
+                <SettingsIcon size={24} />
+            </div>
+            <div class="space-y-1 flex-1">
+                <h3 class="font-semibold text-foreground">
+                    Settings Backup & Restore
+                </h3>
+                <p class="text-sm text-muted-foreground leading-relaxed">
+                    Export your local app preferences (formatting, text styles,
+                    window settings) to a JSON file, or import an existing
+                    configuration.
+                </p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3 pt-2 pl-16">
+            <button
+                onclick={handleExportSettings}
+                class="px-4 py-2 flex items-center gap-2 border border-border text-foreground font-semibold rounded-lg text-sm hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+                <Download size={16} /> Export Settings
+            </button>
+            <button
+                onclick={handleImportSettings}
+                class="px-4 py-2 flex items-center gap-2 border border-border text-foreground font-semibold rounded-lg text-sm hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+                <Upload size={16} /> Import Settings
+            </button>
         </div>
     </div>
 

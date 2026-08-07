@@ -46,6 +46,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
       textStrokeWidth: 0,
     },
   },
+  obsTemplates: {
+    lyric: "",
+    bible: "",
+  },
 };
 
 class SettingsState {
@@ -96,13 +100,22 @@ class SettingsState {
 
   // For future use: Exporting and Importing
   exportSettings(): string {
-    return JSON.stringify(this.config, null, 2);
+    const { workspacePath, ...settingsToExport } = this.config;
+    return JSON.stringify(settingsToExport, null, 2);
   }
 
   importSettings(jsonString: string): boolean {
     try {
       const parsed = JSON.parse(jsonString);
-      this.config = { ...DEFAULT_SETTINGS, ...parsed };
+
+      const preservedWorkspace = this.config.workspacePath;
+
+      this.config = {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        workspacePath: preservedWorkspace,
+      };
+
       this.saveSettings();
       return true;
     } catch (e) {

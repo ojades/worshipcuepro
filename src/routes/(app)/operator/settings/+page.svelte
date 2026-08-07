@@ -1,3 +1,4 @@
+<!-- /src/routes/(app)/operator/settings/+page.svelte -->
 <script lang="ts">
     // Import the decoupled components
     import WorkspaceSettings from "$lib/components/layout/settings/WorkspaceSettings.svelte";
@@ -15,6 +16,7 @@
     } from "@lucide/svelte";
     import Integrations from "$lib/components/layout/settings/Integrations.svelte";
     import FontSettings from "$lib/components/layout/settings/FontSettings.svelte";
+    import ObsSettings from "$lib/components/layout/settings/ObsSettings.svelte";
 
     type Category =
         | "workspace"
@@ -22,6 +24,7 @@
         | "display"
         | "fonts"
         | "media"
+        | "obs"
         | "integrations"
         | "about";
 
@@ -37,6 +40,7 @@
             icon: SlidersHorizontal,
         },
         { id: "media", label: "Media Library", icon: Library },
+        { id: "obs", label: "OBS Settings", icon: Monitor },
         { id: "integrations", label: "Integrations", icon: Network },
         { id: "about", label: "About", icon: Info },
     ];
@@ -88,6 +92,8 @@
             <RemoteDisplay />
         {:else if activeCategory === "fonts"}
             <FontSettings />
+        {:else if activeCategory === "obs"}
+            <ObsSettings />
         {:else if activeCategory === "integrations"}
             <Integrations />
         {:else if activeCategory === "about"}

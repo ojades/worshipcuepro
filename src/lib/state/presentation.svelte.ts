@@ -457,6 +457,7 @@ export class PresentationState {
           type: obsType,
           text: obsText,
           subText: obsSubText,
+          templates: settingsState.config.obsTemplates,
         },
       });
     } catch (error) {

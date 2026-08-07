@@ -220,10 +220,14 @@
 
         <div class="flex-[1.5] space-y-1.5">
             <label
+                for="capitalization"
                 class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
                 >Capitalize</label
             >
-            <div class="flex bg-zinc-900 p-0.5 rounded-md border border-border">
+            <div
+                id="capitalization"
+                class="flex bg-zinc-900 p-0.5 rounded-md border border-border"
+            >
                 {#each [{ label: "AA", value: "uppercase" }, { label: "Aa", value: "capitalize" }, { label: "aa", value: "lowercase" }, { label: "As-is", value: "none" }] as mode}
                     <button
                         onclick={() =>

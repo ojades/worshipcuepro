@@ -10,7 +10,7 @@
         ListPlus,
         Gauge,
     } from "@lucide/svelte";
-    import { media } from "$lib/state/media.svelte";
+    import { media, type Media } from "$lib/state/media.svelte";
     import { onMount } from "svelte";
     import { presentation } from "$lib/state/presentation.svelte";
     import AddToPlaylistMenu from "$lib/components/ui/AddToPlaylistMenu.svelte";
@@ -48,9 +48,6 @@
         }
 
         presentation.broadcastState();
-        // Note: If you have a manual sync/broadcast method in your presentation state,
-        // you may need to call it here (e.g., presentation.broadcast()) depending on how
-        // your state synchronizes with the Tauri windows.
     }
 
     // Load media on mount
@@ -59,7 +56,7 @@
     });
 
     // Filter media based on tab and search
-    let filteredMedia = $derived(
+    let filteredMedia: Media[] = $derived(
         media.allMedia.filter((item) => {
             const matchesSearch = (item.filename || "")
                 .toLowerCase()
@@ -241,7 +238,7 @@
                                 {:else}
                                     <img
                                         src={item.asset_url}
-                                        alt={item.filename || item.name}
+                                        alt={item.filename}
                                         class="w-full h-full object-cover"
                                         onload={(e) =>
                                             handleImageLoad(e, item.id)}
@@ -302,7 +299,7 @@
                                         e.stopPropagation();
 
                                         const options = {
-                                            message: `Are you sure you want to delete "${item.filename || item.name}"? This will remove the file from your workspace.`,
+                                            message: `Are you sure you want to delete "${item.filename}"? This will remove the file from your workspace.`,
                                             title: "Delete Media",
                                             kind: "warning",
                                         } as ConfirmDialogOptions;
@@ -322,9 +319,9 @@
                         <div class="space-y-1 px-1">
                             <p
                                 class="text-sm text-zinc-300 font-medium truncate"
-                                title={item.filename || item.name}
+                                title={item.filename}
                             >
-                                {item.filename || item.name}
+                                {item.filename}
                             </p>
                             <div class="flex justify-between items-center">
                                 <!-- Dimensions display -->

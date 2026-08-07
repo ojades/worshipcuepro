@@ -75,6 +75,10 @@ export interface AppSettings {
   linesPerSlide?: number;
   projector?: DisplayConfig;
   stage?: DisplayConfig;
+  obsTemplates?: {
+    lyric: string;
+    bible: string;
+  };
 }
 
 export type SongCue = Cue & {

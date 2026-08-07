@@ -63,9 +63,10 @@
             Welcome to WorshipCuePro
         </h1>
         <p class="text-sm text-gray-400 leading-relaxed mb-8">
-            To get started, please choose a dedicated workspace folder. This is
-            where your database, media assets, and playlists will be securely
-            saved.
+            To get started, please choose a workspace folder. This is where your
+            database and assets will be saved. A <span
+                class="text-indigo-400 font-semibold">worshipcuepro</span
+            > folder will be created in your selected folder.
         </p>
 
         <!-- Neon-Styled Button -->
