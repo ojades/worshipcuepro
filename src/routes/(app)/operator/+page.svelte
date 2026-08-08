@@ -162,6 +162,9 @@
             );
             const linesPerSlide =
                 (settingsState.config as any).linesPerSlide || 0;
+            const currentFontScale =
+                settingsState.config.projector?.textFormat?.fontSizeScale ??
+                1.0;
 
             const bibleCue = {
                 id: `bible_${bibleState.selectedVersion}_${bibleState.selectedChapter}`,
@@ -172,6 +175,7 @@
                     const chunks = chunkProse(
                         v.text || "Loading...",
                         linesPerSlide,
+                        currentFontScale,
                     );
                     return {
                         id: `verse_${v.id}`,
@@ -375,11 +379,20 @@
                         <select
                             class="bg-background border border-border text-xs rounded-md px-2 py-1 outline-none focus:border-neon-violet transition-colors cursor-pointer"
                             value={(presentation.activeCue as any)
-                                .lines_per_slide || 0}
-                            onchange={(e) =>
-                                presentation.updateCueLayout(
-                                    Number(e.currentTarget.value),
-                                )}
+                                .lines_per_slide ??
+                                settingsState.config.linesPerSlide ??
+                                0}
+                            onchange={(e) => {
+                                const val = Number(e.currentTarget.value);
+                                if (isSongCue) {
+                                    presentation.updateCueLayout(val);
+                                } else {
+                                    settingsState.update({
+                                        linesPerSlide: val,
+                                    });
+                                    presentation.recalculateLayout();
+                                }
+                            }}
                             disabled={isQuickEditing}
                             title="Format lines per slide"
                         >

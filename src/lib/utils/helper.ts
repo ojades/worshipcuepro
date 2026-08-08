@@ -53,19 +53,26 @@ export async function getNetworkUrls(): Promise<NetworkUrls> {
 }
 
 // Helper: Break continuous prose into slides based on lines per slide
-export function chunkProse(text: string, maxLines: number): string[] {
-  if (!maxLines || maxLines <= 0) return [text.trim()];
-  const maxChars = maxLines * 50;
-
+export function chunkProse(
+  text: string,
+  maxLines: number,
+  fontScale: number = 1.0,
+): string[] {
   // 1. Flatten the text to eliminate arbitrary copy-paste line breaks
   const normalizedText = text.replace(/\s*\n\s*/g, " ").trim();
+
+  // NEW: Default to 5 lines if the operator has "Auto" (0) selected
+  const effectiveLines = maxLines && maxLines > 0 ? maxLines : 6;
+
+  // NEW: Base capacity is ~45 chars per line.
+  // Divide by fontScale so huge fonts force smaller chunks. (Min scale 0.5)
+  const maxChars = Math.floor((effectiveLines * 45) / Math.max(fontScale, 0.5));
 
   if (normalizedText.length <= maxChars) return [normalizedText];
 
   const chunks: string[] = [];
 
   // 2. Break text into natural clauses using punctuation.
-  // This keeps the punctuation (and closing quotes) attached to the phrase.
   const clauses = normalizedText.match(/[^.?!;:,]+[.?!;:,]*["')\]]*\s*/g) || [
     normalizedText,
   ];
@@ -96,7 +103,7 @@ export function chunkProse(text: string, maxLines: number): string[] {
     const cleanClause = clause.trim();
     if (!cleanClause) return;
 
-    // 3. If a single phrase (no punctuation) is MASSIVE, split it smartly by words
+    // 3. If a single phrase is MASSIVE, split it smartly by words
     if (cleanClause.length > maxChars) {
       if (currentChunk) {
         chunks.push(currentChunk.trim());
@@ -109,13 +116,11 @@ export function chunkProse(text: string, maxLines: number): string[] {
         const isConjunction = conjunctions.has(word.toLowerCase());
         const potentialLength = currentChunk.length + word.length + 1;
 
-        // Soft break: Try to break BEFORE a conjunction if we're near the limit (75%)
+        // Soft break BEFORE a conjunction if near the limit
         if (isConjunction && currentChunk.length > maxChars * 0.75) {
           chunks.push(currentChunk.trim());
           currentChunk = word;
-        }
-        // Hard break: Absolute limit reached, must break now
-        else if (potentialLength > maxChars && currentChunk.length > 0) {
+        } else if (potentialLength > maxChars && currentChunk.length > 0) {
           chunks.push(currentChunk.trim());
           currentChunk = word;
         } else {
@@ -123,25 +128,20 @@ export function chunkProse(text: string, maxLines: number): string[] {
         }
       });
     } else {
-      // 4. Normal Clause (contains punctuation and fits). Group them if possible!
+      // 4. Normal Clause. Group them if possible!
       const potentialLength =
         currentChunk.length + cleanClause.length + (currentChunk ? 1 : 0);
 
-      // If adding this clause exceeds maxChars, push what we have and start fresh
       if (potentialLength > maxChars && currentChunk) {
         chunks.push(currentChunk.trim());
         currentChunk = cleanClause;
       } else {
-        // Otherwise, keep combining clauses into the current slide
         currentChunk += (currentChunk ? " " : "") + cleanClause;
       }
     }
   });
 
-  // Push any remaining text
-  if (currentChunk) {
-    chunks.push(currentChunk.trim());
-  }
+  if (currentChunk) chunks.push(currentChunk.trim());
 
   return chunks;
 }

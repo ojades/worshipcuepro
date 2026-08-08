@@ -128,10 +128,14 @@
         <!-- Vertical Align -->
         <div class="flex-[1.5] space-y-1.5">
             <label
+                for="vertical-align"
                 class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
                 >Vertical Align</label
             >
-            <div class="flex bg-zinc-900 rounded-md border border-border p-0.5">
+            <div
+                id="vertical-align"
+                class="flex bg-zinc-900 rounded-md border border-border p-0.5"
+            >
                 <button
                     class="flex-1 py-1.5 flex justify-center rounded-sm transition-colors {displayConfig?.textVAlign ===
                     'top'
@@ -169,10 +173,12 @@
         >
             <div class="flex justify-between items-center h-[14px]">
                 <label
+                    for="vGap"
                     class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
                     >Top/Btm Gap</label
                 >
                 <span
+                    id="vGap"
                     class="text-[10px] font-mono {target === 'projector'
                         ? 'text-neon-violet'
                         : 'text-neon-cyan'}"
@@ -201,10 +207,14 @@
     <div class="flex gap-4">
         <div class="flex-1 space-y-1.5">
             <label
+                for="horizontal-align"
                 class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
                 >Horizontal</label
             >
-            <div class="flex bg-zinc-900 rounded-md border border-border p-0.5">
+            <div
+                id="horizontal-align"
+                class="flex bg-zinc-900 rounded-md border border-border p-0.5"
+            >
                 {#each [{ icon: AlignLeft, value: "left" }, { icon: AlignCenter, value: "center" }, { icon: AlignRight, value: "right" }] as align}
                     <button
                         onclick={() => updateFormat("textAlign", align.value)}

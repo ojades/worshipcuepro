@@ -228,6 +228,8 @@
             (c) => c.id === bibleState.selectedChapter,
         );
         const linesPerSlide = (settingsState.config as any).linesPerSlide || 0;
+        const currentFontScale =
+            settingsState.config.projector?.textScale ?? 1.0;
 
         const bibleCue = {
             id: `bible_${bibleState.selectedVersion}_${bibleState.selectedChapter}`,
@@ -239,6 +241,7 @@
                 const chunks = chunkProse(
                     v.text || "Loading...",
                     linesPerSlide,
+                    currentFontScale,
                 );
                 return {
                     id: `verse_${v.id}`,

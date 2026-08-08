@@ -98,6 +98,24 @@
         };
     }
 
+    function seamlessLoop(node: HTMLVideoElement) {
+        const onTimeUpdate = () => {
+            // If we are within 0.15 seconds of the end, hijack the loop
+            if (node.duration && node.currentTime >= node.duration - 0.15) {
+                // Seek to 0.01 instead of 0 to prevent the decoder from stalling on the first keyframe
+                node.currentTime = 0.01;
+            }
+        };
+
+        node.addEventListener("timeupdate", onTimeUpdate);
+
+        return {
+            destroy() {
+                node.removeEventListener("timeupdate", onTimeUpdate);
+            },
+        };
+    }
+
     function formatTime(ms: number) {
         const totalSeconds = Math.floor(Math.abs(ms) / 1000);
         const h = Math.floor(totalSeconds / 3600);
@@ -154,6 +172,7 @@
                     src={display.liveBackground.url}
                     use:setPlaybackRate={display.liveBackground.playbackRate ??
                         1.0}
+                    use:seamlessLoop
                     class="absolute inset-0 w-full h-full object-cover z-0"
                     autoplay
                     loop

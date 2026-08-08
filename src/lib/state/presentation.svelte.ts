@@ -10,6 +10,7 @@ import { parseLyrics } from "$lib/utils/lyrics";
 import { songsState } from "$lib/state/songs.svelte";
 import { settingsState } from "./settings.svelte";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { chunkProse } from "$lib/utils/helper";
 
 export class PresentationState {
   // -------------------------
@@ -211,26 +212,54 @@ export class PresentationState {
     }
   }
 
-  private chunkProse(text: string, maxLines: number): string[] {
-    if (!maxLines || maxLines <= 0) return [text];
+  recalculateLayout() {
+    const cue = this.activeCue as any;
+    if (!cue) return;
 
-    const maxChars = maxLines * 50; // Estimate 50 chars per line
-    if (text.length <= maxChars) return [text];
+    // Favor cue-specific lines (Songs) or fallback to Global (Bibles)
+    const lines =
+      cue.lines_per_slide ?? settingsState.config.linesPerSlide ?? 0;
 
-    const words = text.split(" ");
-    const chunks: string[] = [];
-    let currentChunk = "";
+    // THE GOLDEN RULE: Projector is the absolute source of truth
+    const fontScale = settingsState.config.projector?.textScale ?? 1.0;
 
-    for (const word of words) {
-      if (currentChunk.length + word.length + 1 > maxChars) {
-        chunks.push(currentChunk.trim());
-        currentChunk = word + " ";
-      } else {
-        currentChunk += word + " ";
-      }
+    const currentSectionIndex = cue.sections?.findIndex((s: any) =>
+      s.slides.some((sl: any) => sl.id === this.activeSlideId),
+    );
+
+    if (cue.type === "bible" && cue.sections) {
+      cue.sections = cue.sections.map((section: any) => {
+        // Re-flatten the text and apply the new mathematical chunk limits
+        const fullText = section.slides
+          .map((s: any) => s.text)
+          .join(" ")
+          .replace(/\s+/g, " ");
+        const chunks = chunkProse(fullText, lines, fontScale);
+
+        return {
+          ...section,
+          slides: chunks.map((chunkText: string, i: number) => ({
+            id: `${section.id}_slide_${i}`,
+            text: chunkText,
+            reference: section.slides[0]?.reference || "",
+          })),
+        };
+      });
+    } else if (cue.raw_lyrics !== undefined) {
+      cue.sections = parseLyrics(cue.raw_lyrics, lines);
+    } else {
+      return;
     }
-    if (currentChunk) chunks.push(currentChunk.trim());
-    return chunks;
+
+    // Keep the operator on the same relative section they were viewing
+    if (currentSectionIndex !== -1 && cue.sections[currentSectionIndex]) {
+      this.activeSlideId =
+        cue.sections[currentSectionIndex].slides[0]?.id || null;
+    } else {
+      this.activeSlideId = cue.sections[0]?.slides[0]?.id || null;
+    }
+
+    this.broadcastState();
   }
 
   // Renamed from updateSongLayout to handle Bibles as well
@@ -238,50 +267,18 @@ export class PresentationState {
     const cue = this.activeCue as any;
     if (!cue) return;
 
-    const currentSectionIndex = cue.sections?.findIndex((s: any) =>
-      s.slides.some((sl: any) => sl.id === this.activeSlideId),
-    );
-
     cue.lines_per_slide = lines;
 
-    if (cue.type === "bible" && cue.sections) {
-      // Handle Bibles: Reconstruct the verse and re-chunk it dynamically
-      cue.sections = cue.sections.map((section: any) => {
-        // Reconstruct original text by joining current chunks
-        const fullText = section.slides.map((s: any) => s.text).join(" ");
-        const chunks = this.chunkProse(fullText, lines);
-
-        return {
-          ...section,
-          slides: chunks.map((chunkText: string, i: number) => ({
-            id: `${section.id}_slide_${i}`,
-            text: chunkText,
-            reference: `${section.title} (${cue.artist})`,
-          })),
-        };
-      });
-    } else if (cue.raw_lyrics !== undefined) {
-      // Handle Songs: Use standard parser and update DB
-      cue.sections = parseLyrics(cue.raw_lyrics, lines);
-
+    if (cue.raw_lyrics !== undefined) {
       songsState.update(cue.id, {
         title: cue.title,
         artist: cue.artist,
         lines_per_slide: lines,
         raw_lyrics: cue.raw_lyrics,
       });
-    } else {
-      return;
     }
 
-    // Attempt to retain the slide we were looking at
-    if (currentSectionIndex !== -1 && cue.sections[currentSectionIndex]) {
-      this.activeSlideId = cue.sections[currentSectionIndex].slides[0].id;
-    } else {
-      this.activeSlideId = cue.sections[0]?.slides[0]?.id || null;
-    }
-
-    this.broadcastState();
+    this.recalculateLayout();
   }
 
   async updateSongLyrics(newLyrics: string) {

@@ -1,9 +1,10 @@
 <!-- src/lib/components/layout/ControlPanel.svelte -->
 <script lang="ts">
+    import { untrack } from "svelte"; // <-- 1. Import untrack
     import { Form, Monitor, Projector, User } from "@lucide/svelte";
     import { systemState } from "$lib/state/system.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
-    import { controlsState } from "$lib/state/controls.svelte"; // NEW
+    import { controlsState } from "$lib/state/controls.svelte";
 
     import ProjectorDisplay from "$lib/components/layout/display/ProjectorDisplay.svelte";
     import StageDisplay from "$lib/components/layout/display/StageDisplay.svelte";
@@ -42,12 +43,6 @@
             textFormat: settingsState.config.projector?.textFormat,
             vGap: settingsState.config.projector?.vGap,
         },
-        // textScale: (settingsState.config as any).textScale ?? 1.0,
-        // stageTextScale: (settingsState.config as any).stageTextScale ?? 1.0,
-        // alignment: (settingsState.config as any).projectorAlignment || "middle",
-        // referencePosition:
-        //     (settingsState.config as any).bibleReferencePosition ||
-        //     "bottom-right",
 
         // Stage Controls Routing Mapping
         stageMessage: controlsState.stageMessage,
@@ -62,6 +57,14 @@
         speakerPausedRemainingMs: controlsState.speakerPausedRemainingMs,
         showSpeakerTimerOnStage: controlsState.showSpeakerTimerOnStage,
         showSpeakerTimerOnProjector: controlsState.showSpeakerTimerOnProjector,
+    });
+
+    $effect(() => {
+        const currentProjectorScale = settingsState.config.projector?.textScale;
+
+        untrack(() => {
+            presentation.recalculateLayout();
+        });
     });
 </script>
 
