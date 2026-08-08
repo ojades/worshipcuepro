@@ -308,7 +308,7 @@
         line-height: var(--line-height);
         text-align: var(--text-align);
 
-        font-size: calc(6cqw * var(--font-scale));
+        font-size: calc(3cqw * var(--font-scale));
 
         -webkit-text-stroke: var(--stroke-width) var(--stroke-color);
         paint-order: stroke fill;
@@ -319,7 +319,7 @@
         font-family: var(--font-family);
         font-weight: var(--font-weight);
 
-        font-size: calc(4.5cqw * var(--font-scale));
+        font-size: calc(3cqw * var(--font-scale));
 
         -webkit-text-stroke: calc(var(--stroke-width) * 0.5) var(--stroke-color);
         paint-order: stroke fill;
