@@ -1,4 +1,3 @@
-// /src-tauri/src/obs.rs
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -12,8 +11,9 @@ use axum::{
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,20 +27,22 @@ pub struct CueData {
 
 pub struct AppState {
     pub tx: broadcast::Sender<String>,
+    pub cache: Arc<RwLock<HashMap<String, String>>>,
 }
 
-// 1. Define the embedded folder pointing to your SvelteKit build output
+// Define the embedded folder pointing to your SvelteKit build output
 #[derive(RustEmbed)]
-#[folder = "../build/"] // Change to "../dist/" if you use Vite's default output
+#[folder = "../build/"]
 struct Assets;
 
-pub async fn start_server(tx: broadcast::Sender<String>) {
-    let app_state = Arc::new(AppState { tx });
+pub async fn start_server(
+    tx: broadcast::Sender<String>,
+    cache: Arc<RwLock<HashMap<String, String>>>,
+) {
+    let app_state = Arc::new(AppState { tx, cache });
 
     let app = Router::new()
-        // WebSocket route
         .route("/ws", get(ws_handler))
-        // 2. Catch-all fallback route for serving static files from memory
         .fallback(get(static_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
@@ -54,21 +56,16 @@ pub async fn start_server(tx: broadcast::Sender<String>) {
     axum::serve(listener, app).await.unwrap();
 }
 
-// 3. Handler to serve embedded files and handle SPA routing
 async fn static_handler(uri: Uri) -> impl IntoResponse {
     let path = uri.path().trim_start_matches('/');
-
-    // If the path is empty, default to index.html
     let path = if path.is_empty() { "index.html" } else { path };
 
-    // Try to get the file from the embedded assets
     match Assets::get(path) {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
             ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
         }
         None => {
-            // SPA Fallback: If file is not found (e.g., /stage), serve index.html
             if let Some(index) = Assets::get("index.html") {
                 ([(header::CONTENT_TYPE, "text/html")], index.data).into_response()
             } else {
@@ -85,6 +82,14 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let (mut sender, mut receiver) = socket.split();
     let mut rx = state.tx.subscribe();
+
+    // INSTANT STATE SYNC: Send the latest cached payloads immediately upon connection
+    {
+        let cache = state.cache.read().await;
+        for (_, msg) in cache.iter() {
+            let _ = sender.send(Message::Text(msg.clone())).await;
+        }
+    }
 
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = rx.recv().await {

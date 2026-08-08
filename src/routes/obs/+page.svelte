@@ -116,7 +116,7 @@
         <div
             in:fly={{ y: 50, duration: 400, delay: 100 }}
             out:fade={{ duration: 200 }}
-            class="w-full max-w-6xl mx-auto flex flex-col gap-2"
+            class="w-full max-w-7xl mx-auto flex flex-col gap-2"
         >
             <!-- BIBLE RENDERER -->
             {#if activeCue.type === "bible"}

@@ -1,7 +1,8 @@
-// /src-tauri/src/lib.rs
 use reqwest::Client;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tauri::Manager;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 
 pub mod commands;
 pub mod obs;
@@ -10,11 +11,12 @@ use commands::api_bible::{
     get_bible_books, get_bible_chapters, get_bible_verse_text, get_bible_verses,
     get_bible_versions, ApiHttpClient,
 };
-
 use commands::youversion::{get_youversion_index, get_youversion_verses, get_youversion_versions};
-// Tauri managed state to hold our broadcast sender
+
+// Tauri managed state to hold our broadcast sender AND our state cache
 pub struct ServerState {
     pub tx: broadcast::Sender<String>,
+    pub cache: Arc<RwLock<HashMap<String, String>>>,
 }
 
 #[tauri::command]
@@ -36,13 +38,19 @@ async fn broadcast_payload(
     state: tauri::State<'_, ServerState>,
 ) -> Result<(), String> {
     let message = serde_json::json!({
-        "type": event_type,
+        "type": &event_type,
         "payload": payload
     });
 
     let json_string = serde_json::to_string(&message).map_err(|e| e.to_string())?;
 
-    // Broadcast over Axum WebSocket channel
+    // 1. Save the latest payload to the cache so new connections get it instantly
+    {
+        let mut cache = state.cache.write().await;
+        cache.insert(event_type, json_string.clone());
+    }
+
+    // 2. Broadcast over Axum WebSocket channel
     let _ = state.tx.send(json_string);
 
     Ok(())
@@ -70,12 +78,20 @@ pub fn run() {
             // Create a broadcast channel with a capacity of 100 messages
             let (tx, _rx) = broadcast::channel(100);
 
-            // Allow Tauri commands to access the sender
-            app.manage(ServerState { tx: tx.clone() });
+            // Create the thread-safe state cache
+            let cache = Arc::new(RwLock::new(HashMap::new()));
 
-            // Spawn the Axum server in the background (No more static_dir needed!)
+            // Allow Tauri commands to access the sender and cache
+            app.manage(ServerState {
+                tx: tx.clone(),
+                cache: cache.clone(),
+            });
+
+            // Spawn the Axum server in the background
+            let tx_clone = tx.clone();
+            let cache_clone = cache.clone();
             tauri::async_runtime::spawn(async move {
-                obs::start_server(tx).await;
+                obs::start_server(tx_clone, cache_clone).await;
             });
 
             Ok(())
