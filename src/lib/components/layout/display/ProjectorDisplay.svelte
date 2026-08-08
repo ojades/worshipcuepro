@@ -20,6 +20,7 @@
         speakerTargetTimestamp?: number | null;
         speakerPausedRemainingMs?: number | null;
         showSpeakerTimerOnProjector?: boolean;
+        speakerTotalDurationMs?: number | null;
     }
 
     let { display }: { display: ExtendedPayload } = $props<{

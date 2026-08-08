@@ -106,15 +106,14 @@ export class ControlsState {
   }
   adjustSpeakerTimer(minutes: number) {
     const adjustmentMs = minutes * 60 * 1000;
+
+    // NEW: Always adjust the base duration so the Stage percentage math stays accurate!
+    this.speakerDurationMs = Math.max(0, this.speakerDurationMs + adjustmentMs);
+
     if (this.speakerTargetTimestamp !== null) {
       this.speakerTargetTimestamp += adjustmentMs;
     } else if (this.speakerPausedRemainingMs !== null) {
       this.speakerPausedRemainingMs += adjustmentMs;
-    } else {
-      this.speakerDurationMs = Math.max(
-        0,
-        this.speakerDurationMs + adjustmentMs,
-      );
     }
     this.broadcastControls();
   }
@@ -146,6 +145,7 @@ export class ControlsState {
 
       speakerTargetTimestamp: this.speakerTargetTimestamp,
       speakerPausedRemainingMs: this.speakerPausedRemainingMs,
+      speakerTotalDurationMs: this.speakerDurationMs, // NEW: Pushed to display
       showSpeakerTimerOnStage: this.showSpeakerTimerOnStage,
       showSpeakerTimerOnProjector: this.showSpeakerTimerOnProjector,
     };

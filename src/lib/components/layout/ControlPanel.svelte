@@ -55,6 +55,7 @@
 
         speakerTargetTimestamp: controlsState.speakerTargetTimestamp,
         speakerPausedRemainingMs: controlsState.speakerPausedRemainingMs,
+        speakerTotalDurationMs: controlsState.speakerTotalDurationMs,
         showSpeakerTimerOnStage: controlsState.showSpeakerTimerOnStage,
         showSpeakerTimerOnProjector: controlsState.showSpeakerTimerOnProjector,
     });

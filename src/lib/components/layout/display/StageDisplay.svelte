@@ -16,6 +16,7 @@
 
         speakerTargetTimestamp?: number | null;
         speakerPausedRemainingMs?: number | null;
+        speakerTotalDurationMs?: number | null; // NEW: Needed to calculate percentages
         showSpeakerTimerOnStage?: boolean;
     };
 
@@ -69,6 +70,7 @@
     let currentTime = $state("");
     let serviceTimerText = $state<string | null>(null);
     let speakerTimerText = $state<string | null>(null);
+    let speakerTimerColorClass = $state("text-emerald-400"); // NEW: Tracks the current color state
     let isSpeakerOverrun = $state(false);
 
     function formatTime(ms: number) {
@@ -81,6 +83,21 @@
         if (h > 0) formatted += `${h.toString().padStart(2, "0")}:`;
         formatted += `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
         return ms < 0 ? `-${formatted}` : formatted;
+    }
+
+    // NEW: Helper to determine the color based on percentage
+    function getSpeakerTimerColor(
+        remainingMs: number,
+        totalMs: number | null | undefined,
+    ) {
+        if (remainingMs < 0) return "text-red-500 animate-pulse"; // Overrun
+        if (!totalMs || totalMs <= 0) return "text-emerald-400"; // Fallback if total isn't provided
+
+        const percentLeft = remainingMs / totalMs;
+
+        if (percentLeft <= 0.2) return "text-red-500";
+        if (percentLeft <= 0.5) return "text-amber-400";
+        return "text-emerald-400";
     }
 
     function tick() {
@@ -109,15 +126,24 @@
             const diff = display.speakerTargetTimestamp - now;
             isSpeakerOverrun = diff < 0;
             speakerTimerText = formatTime(diff);
+            speakerTimerColorClass = getSpeakerTimerColor(
+                diff,
+                display.speakerTotalDurationMs,
+            );
         } else if (
             display.speakerPausedRemainingMs !== null &&
             display.speakerPausedRemainingMs !== undefined
         ) {
             isSpeakerOverrun = display.speakerPausedRemainingMs < 0;
             speakerTimerText = formatTime(display.speakerPausedRemainingMs);
+            speakerTimerColorClass = getSpeakerTimerColor(
+                display.speakerPausedRemainingMs,
+                display.speakerTotalDurationMs,
+            );
         } else {
             speakerTimerText = null;
             isSpeakerOverrun = false;
+            speakerTimerColorClass = "text-emerald-400";
         }
     }
 
@@ -174,19 +200,19 @@
                 </div>
             {/if}
 
-            {#if display.showSpeakerTimerOnStage && speakerTimerText}
+            <!-- Only show small timer in header if there is text or media blocking the center -->
+            {#if display.showSpeakerTimerOnStage && speakerTimerText && (display.liveText || display.liveMedia)}
                 <div
                     class="flex flex-col items-end drop-shadow-xl bg-black/40 px-[2cqw] py-[1cqh] rounded-xl backdrop-blur-md border border-white/10"
                 >
                     <span
-                        class="text-[8cqh] font-black tabular-nums leading-none {isSpeakerOverrun
-                            ? 'text-red-500 animate-pulse'
-                            : 'text-emerald-400'}"
+                        class="text-[8cqh] font-black tabular-nums leading-none transition-colors duration-500 {speakerTimerColorClass}"
                     >
                         {speakerTimerText}
                     </span>
                 </div>
             {:else}
+                <!-- Show clock if there is no timer in the header -->
                 <div class="flex items-center gap-8 md:gap-16">
                     {#if display.stageShowClock !== false}
                         <div
@@ -258,10 +284,27 @@
                         {display.liveText}
                     </p>
                 {:else}
-                    <span
-                        class="text-zinc-800 font-mono tracking-widest cq-text-empty font-bold uppercase relative z-10"
-                    >
-                    </span>
+                    <!-- MASSIVE CENTERED TIMER FOR EMPTY STAGE -->
+                    {#if display.showSpeakerTimerOnStage && speakerTimerText}
+                        <div
+                            class="absolute inset-0 flex flex-col items-center justify-center z-10 animate-in zoom-in-95 duration-300 font-sans"
+                        >
+                            <span
+                                class="text-zinc-500 text-[8cqh] font-bold uppercase tracking-widest mb-[2cqh]"
+                                >Time Left</span
+                            >
+                            <span
+                                class="text-[60cqh] font-black tabular-nums leading-none drop-shadow-2xl transition-colors duration-500 {speakerTimerColorClass}"
+                            >
+                                {speakerTimerText}
+                            </span>
+                        </div>
+                    {:else}
+                        <span
+                            class="text-zinc-800 font-mono tracking-widest cq-text-empty font-bold uppercase relative z-10"
+                        >
+                        </span>
+                    {/if}
                 {/if}
             </div>
         </div>
@@ -361,7 +404,6 @@
         container-type: size;
     }
 
-    /* Using the combined font-scale variable for dynamic sizing */
     .text-scale-huge {
         font-size: calc(min(8.5cqw, 35cqh) * var(--font-scale, 1));
     }

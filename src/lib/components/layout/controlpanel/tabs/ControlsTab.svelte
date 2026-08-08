@@ -16,7 +16,6 @@
     } from "@lucide/svelte";
 
     let stageMessageInput = $state("");
-    let speakerMinutesInput = $state(50);
     let serviceTimeInput = $state("09:00");
 
     // --- New Speaker Timer Adjustment State ---
@@ -82,7 +81,6 @@
     <div
         class="bg-background/50 border border-border rounded-xl p-3 flex flex-col gap-3"
     >
-        <!-- ... (Keep your existing message card code here) ... -->
         <div class="flex items-center gap-2 text-muted-foreground">
             <MessageSquare size={16} />
             <span class="text-xs font-bold uppercase tracking-wider"
@@ -161,9 +159,11 @@
             <!-- Base duration is locked out while timer is running/paused to prevent accidental overwrites -->
             <input
                 type="number"
-                bind:value={speakerMinutesInput}
-                onchange={() =>
-                    controlsState.setSpeakerDuration(speakerMinutesInput)}
+                value={Math.round(controlsState.speakerDurationMs / 60000)}
+                onchange={(e) =>
+                    controlsState.setSpeakerDuration(
+                        Number(e.currentTarget.value),
+                    )}
                 disabled={controlsState.isSpeakerTimerRunning ||
                     controlsState.speakerPausedRemainingMs !== null}
                 class="w-16 bg-zinc-900 border border-border rounded-md px-2 py-1.5 text-center text-sm focus:border-emerald-400 outline-none text-foreground tabular-nums font-bold disabled:opacity-50 disabled:cursor-not-allowed"
@@ -275,7 +275,6 @@
     <div
         class="bg-background/50 border border-border rounded-xl p-3 flex flex-col gap-3"
     >
-        <!-- ... (Keep your existing service card code here) ... -->
         <div class="flex items-center gap-2 text-muted-foreground">
             <Clock size={16} class="text-neon-violet" />
             <span
