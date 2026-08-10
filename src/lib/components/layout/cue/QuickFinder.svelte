@@ -18,13 +18,22 @@
     import { convertFileSrc } from "@tauri-apps/api/core";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
     import { settingsState } from "$lib/state/settings.svelte";
-    import { switchBibleVersionLive } from "$lib/utils/helper";
+    import { chunkProse, switchBibleVersionLive } from "$lib/utils/helper";
+    import type { FtsSearchResult } from "$lib/commands/bible-db";
+    import type { SongSearchResult } from "$lib/commands/song-db"; // NEW: Import Song FTS Type
 
     // UX State
     let searchQuery = $state("");
     let activeTab = $state<"all" | "songs" | "bible" | "media">("all");
     let searchInput: HTMLInputElement;
     let selectedIndex = $state(0);
+
+    // Asynchronous state for FTS search
+    let isSearchingBible = $state(false);
+    let isSearchingSongs = $state(false); // NEW: Song loading state
+    let bibleFtsResults = $state<FtsSearchResult[]>([]);
+    let songFtsResults = $state<SongSearchResult[]>([]); // NEW: Song FTS results
+    let searchTimeout: ReturnType<typeof setTimeout>;
 
     const tabs = [
         { id: "all", label: "All" },
@@ -33,29 +42,25 @@
         { id: "media", label: "Media", icon: ImageIcon },
     ] as const;
 
-    // Filter versions based on settings state for auto-detection
     let enabledVersions = $derived.by(() => {
         const enabledIds = (settingsState.config as any).enabledBibles || [];
         if (enabledIds.length === 0) return bibleState.versions;
         return bibleState.versions.filter((v) => enabledIds.includes(v.id));
     });
 
-    // --- NEW: Auto-detect Version Abbreviations in the Quick Finder ---
+    // Auto-detect Version Abbreviations in the Quick Finder
     $effect(() => {
         const parts = searchQuery.trimStart().split(" ");
         if (parts.length > 1) {
             const firstWord = parts[0].toLowerCase();
-
             const matchedVersion = enabledVersions.find(
                 (v) => v.abbreviation?.toLowerCase() === firstWord,
             );
 
             if (matchedVersion) {
                 if (bibleState.selectedVersion !== matchedVersion.id) {
-                    // Swap it live!
                     switchBibleVersionLive(matchedVersion.id);
                 }
-                // Strip the version abbreviation
                 searchQuery = searchQuery
                     .substring(firstWord.length)
                     .trimStart();
@@ -63,7 +68,70 @@
         }
     });
 
-    // Derived Search Results from real state
+    // --- NEW: Concurrent Async FTS Search for Bible & Songs ---
+    $effect(() => {
+        const query = searchQuery.toLowerCase().trim();
+        const regex =
+            /^(\d?\s*[a-z]+(?:[\s-]*[a-z]+)*)\s*(?:(\d+)\s*(?:[:\s]\s*(\d+))?)?$/i;
+        const match = query.match(regex);
+
+        // Does it look like a Bible navigation reference?
+        const isBibleNav =
+            match &&
+            bibleState.books.some(
+                (b) => b.name.toLowerCase() === match[1]?.trim(),
+            );
+
+        if (query.length > 2) {
+            clearTimeout(searchTimeout);
+
+            // Set loading indicators
+            if (!isBibleNav && (activeTab === "all" || activeTab === "bible"))
+                isSearchingBible = true;
+            if (activeTab === "all" || activeTab === "songs")
+                isSearchingSongs = true;
+
+            searchTimeout = setTimeout(async () => {
+                const promises = [];
+
+                // 1. Search Bible
+                if (
+                    !isBibleNav &&
+                    (activeTab === "all" || activeTab === "bible")
+                ) {
+                    promises.push(
+                        bibleState
+                            .search(query, 10)
+                            .then((res) => (bibleFtsResults = res)),
+                    );
+                } else {
+                    bibleFtsResults = [];
+                }
+
+                // 2. Search Songs
+                if (activeTab === "all" || activeTab === "songs") {
+                    promises.push(
+                        songsState
+                            .search(query, 10)
+                            .then((res) => (songFtsResults = res)),
+                    );
+                } else {
+                    songFtsResults = [];
+                }
+
+                await Promise.all(promises);
+                isSearchingBible = false;
+                isSearchingSongs = false;
+            }, 150);
+        } else {
+            bibleFtsResults = [];
+            songFtsResults = [];
+            isSearchingBible = false;
+            isSearchingSongs = false;
+        }
+    });
+
+    // Derived Search Results (Sync + Async merged)
     let searchResults = $derived.by(() => {
         if (!searchQuery.trim()) return [];
 
@@ -79,58 +147,42 @@
                 results.push({
                     id: `version_${exactVersion.id}`,
                     type: "version_switch",
-                    title: `Switch Bible Translation to ${exactVersion.abbreviation}`,
+                    title: `Switch Translation to ${exactVersion.abbreviation}`,
                     subtitle: exactVersion.name,
                     payload: exactVersion,
                 });
             }
         }
 
-        // 1. Search Songs
+        // 1. Search Songs (Using Blazing Fast FTS)
         if (activeTab === "all" || activeTab === "songs") {
-            const matchedSongs = songsState.songs
-                .filter(
-                    (s) =>
-                        s.title.toLowerCase().includes(query) ||
-                        (s.artist && s.artist.toLowerCase().includes(query)) ||
-                        (s.raw_lyrics &&
-                            s.raw_lyrics.toLowerCase().includes(query)),
-                )
-                .map((s) => {
-                    const matchesTitleOrArtist =
-                        s.title.toLowerCase().includes(query) ||
-                        (s.artist && s.artist.toLowerCase().includes(query));
-
-                    return {
-                        id: `song_${s.id}`,
-                        type: "song",
-                        title: s.title,
-                        subtitle: matchesTitleOrArtist
-                            ? s.artist || "Unknown Artist"
-                            : "Matches in lyrics",
-                        payload: s,
-                    };
-                });
-            results.push(...matchedSongs);
+            const formattedSongs = songFtsResults.map((s) => ({
+                id: `song_${s.id}`,
+                type: "song",
+                title: s.title,
+                // If snippet exists, show the HTML highlight. Otherwise default to Artist.
+                subtitle: s.lyrics_snippet || s.artist || "Unknown Artist",
+                isHtml: !!s.lyrics_snippet,
+                payload: s,
+            }));
+            results.push(...formattedSongs);
         }
 
-        // 2. Search Bible (Smart Parser with Exact Match Logic)
+        // 2. Search Bible
         if (activeTab === "all" || activeTab === "bible") {
             const regex =
                 /^(\d?\s*[a-z]+(?:[\s-]*[a-z]+)*)\s*(?:(\d+)\s*(?:[:\s]\s*(\d+))?)?$/i;
             const match = query.match(regex);
 
+            // A. Reference Navigation (e.g., "John 3 16")
             if (match) {
                 const bookQuery = match[1]?.trim().toLowerCase();
                 const matchedBooks = bibleState.books.filter((b) =>
                     b.name.toLowerCase().includes(bookQuery),
                 );
-
-                // Exact Match logic (Solves the "John" vs "1 John" issue)
                 const exactMatch = matchedBooks.find(
                     (b) => b.name.toLowerCase() === bookQuery,
                 );
-
                 const book =
                     exactMatch ||
                     (matchedBooks.length === 1 ? matchedBooks[0] : null);
@@ -141,9 +193,9 @@
 
                     results.push({
                         id: `bible_${book.id}`,
-                        type: "bible",
+                        type: "bible_nav",
                         title: `${book.name}${chapter}${verse}`,
-                        subtitle: "Press Enter to open and fire Scripture",
+                        subtitle: "Press Enter to open Reference",
                         payload: {
                             bookId: book.id,
                             chapterNum: match[2],
@@ -152,6 +204,18 @@
                     });
                 }
             }
+
+            // B. FTS Phrase Results (e.g., "passed away")
+            const ftsFormatted = bibleFtsResults.map((res) => ({
+                id: `bible_fts_${res.reference}`,
+                type: "bible_fts",
+                title: res.reference,
+                subtitle: res.text,
+                isHtml: true,
+                payload: res,
+            }));
+
+            results.push(...ftsFormatted);
         }
 
         // 3. Search Media
@@ -174,17 +238,14 @@
         return results;
     });
 
-    // Reset selection when results change
     $effect(() => {
         if (searchResults.length) {
             selectedIndex = 0;
         }
     });
 
-    // --- Handle Global Custom Events ---
     onMount(() => {
         const handleFocus = () => searchInput?.focus();
-
         const handleEscape = () => {
             if (searchQuery || document.activeElement === searchInput) {
                 searchQuery = "";
@@ -201,7 +262,6 @@
         };
     });
 
-    // Only fires when the user is actively typing in the search box
     function handleInputKeydown(e: KeyboardEvent) {
         if (searchResults.length > 0) {
             if (e.key === "ArrowDown") {
@@ -222,32 +282,61 @@
     async function fireResult(result: any) {
         if (result.type === "song") {
             await playlists.addCueToActive(result.payload.id, "song");
-
             const newCue = presentation.activePlaylist?.cues.at(-1);
-            if (newCue) {
-                presentation.fire(newCue);
-            }
+            if (newCue) presentation.fire(newCue);
         } else if (result.type === "version_switch") {
             switchBibleVersionLive(result.payload.id);
-        } else if (result.type === "bible") {
+        } else if (result.type === "bible_nav") {
             const { bookId, chapterNum, verseNum } = result.payload;
-
             goto("/operator/bibles");
-
             if (chapterNum) {
                 bibleState.goToReference(bookId, chapterNum, verseNum);
             } else {
                 bibleState.selectBook(bookId);
             }
+        } else if (result.type === "bible_fts") {
+            const ftsItem = result.payload as FtsSearchResult;
+            const version = bibleState.versions.find(
+                (v) => v.id === bibleState.selectedVersion,
+            );
+            const versionAbbr =
+                version?.abbreviation || version?.name || "Bible";
+            const linesPerSlide =
+                (settingsState.config as any).linesPerSlide || 0;
+            const currentFontScale =
+                settingsState.config.projector?.textScale ?? 1.0;
+
+            const bibleCue = {
+                id: `bible_search_${Date.now()}`,
+                type: "bible",
+                title: ftsItem.reference,
+                artist: versionAbbr,
+                sections: [
+                    {
+                        id: `sec_search`,
+                        title: ftsItem.reference,
+                        slides: chunkProse(
+                            ftsItem.full_text,
+                            linesPerSlide,
+                            currentFontScale,
+                        ).map((chunkText, i, arr) => ({
+                            id: `slide_${i}`,
+                            text: chunkText,
+                            reference: `${ftsItem.reference} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
+                        })),
+                    },
+                ],
+            };
+
+            presentation.fire(bibleCue, `slide_0`);
+            await playlists.ensureActivePlaylist();
+            goto("/operator");
         } else if (result.type === "media") {
             const mediaItem = result.payload;
             const safeUrl =
                 mediaItem.asset_url ||
                 (mediaItem.filepath ? convertFileSrc(mediaItem.filepath) : "");
-
-            if (safeUrl) {
-                presentation.setBackground(safeUrl, mediaItem.type);
-            }
+            if (safeUrl) presentation.setBackground(safeUrl, mediaItem.type);
         }
 
         searchQuery = "";
@@ -293,8 +382,8 @@
                         activeTab = tab.id;
                         searchInput?.focus();
                     }}
-                    class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5
-                    {activeTab === tab.id
+                    class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 {activeTab ===
+                    tab.id
                         ? 'bg-zinc-800 text-zinc-100'
                         : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'}"
                 >
@@ -319,6 +408,12 @@
                     > to fire
                 </p>
             </div>
+        {:else if isSearchingBible || isSearchingSongs}
+            <div
+                class="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm"
+            >
+                <span class="animate-pulse">Searching...</span>
+            </div>
         {:else if searchResults.length === 0}
             <div
                 class="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm"
@@ -333,8 +428,8 @@
                     <div
                         onmouseenter={() => (selectedIndex = i)}
                         onclick={() => fireResult(result)}
-                        class="group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all border
-                        {selectedIndex === i
+                        class="group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all border {selectedIndex ===
+                        i
                             ? 'bg-neon-violet/10 border-neon-violet/30'
                             : 'bg-transparent border-transparent hover:bg-zinc-800/50'}"
                     >
@@ -375,7 +470,7 @@
                                     {/if}
                                 {:else if result.type === "song"}
                                     <Music size={14} />
-                                {:else if result.type === "bible" || result.type === "version_switch"}
+                                {:else if result.type === "bible_nav" || result.type === "bible_fts" || result.type === "version_switch"}
                                     <BookOpen size={14} />
                                 {:else}
                                     <ImageIcon size={14} />
@@ -385,17 +480,28 @@
                             <!-- Text Details -->
                             <div class="flex flex-col truncate flex-1">
                                 <span
-                                    class="text-sm font-semibold text-zinc-200 truncate"
-                                    >{result.title}</span
-                                >
-                                <span
-                                    class="text-xs text-zinc-500 truncate {result.subtitle ===
-                                    'Matches in lyrics'
-                                        ? 'italic'
+                                    class="text-sm font-semibold text-zinc-200 truncate {result.type ===
+                                    'bible_fts'
+                                        ? 'text-violet-400'
                                         : ''}"
                                 >
-                                    {result.subtitle}
+                                    {result.title}
                                 </span>
+                                {#if result.isHtml}
+                                    <!-- Renders HTML for Bible AND Song FTS highlights -->
+                                    <span class="text-xs text-zinc-400 truncate"
+                                        >{@html result.subtitle}</span
+                                    >
+                                {:else}
+                                    <span
+                                        class="text-xs text-zinc-500 truncate {result.subtitle ===
+                                        'Matches in lyrics'
+                                            ? 'italic'
+                                            : ''}"
+                                    >
+                                        {result.subtitle}
+                                    </span>
+                                {/if}
                             </div>
                         </div>
 

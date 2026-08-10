@@ -23,6 +23,14 @@ pub struct SongInput {
     pub raw_lyrics: String,
 }
 
+#[derive(Serialize)]
+pub struct SongSearchResult {
+    pub id: String,
+    pub title: String,
+    pub artist: Option<String>,
+    pub lyrics_snippet: Option<String>,
+}
+
 #[tauri::command]
 pub fn fetch_all_songs(pool: State<'_, DbPool>) -> Result<Vec<Song>, String> {
     let conn = pool.get().map_err(|e| e.to_string())?;
@@ -105,4 +113,58 @@ pub fn sync_checkpoint(pool: State<'_, DbPool>) -> Result<(), String> {
     conn.execute("PRAGMA wal_checkpoint(TRUNCATE);", [])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn search_songs_fts(
+    pool: State<'_, DbPool>,
+    query_string: String,
+    limit: i32,
+) -> Result<Vec<SongSearchResult>, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+
+    let safe_query = query_string
+        .replace("\"", "")
+        .replace("'", "")
+        .split_whitespace()
+        .map(|s| format!("{}*", s))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if safe_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // snippet() pulls from column index 3 (raw_lyrics) to highlight where the phrase matched
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                id,
+                title,
+                artist,
+                snippet(songs_fts, 3, '<mark class=\"bg-violet-900/60 text-violet-300 font-bold px-1 rounded\">', '</mark>', '...', 15)
+             FROM songs_fts
+             WHERE songs_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let iter = stmt
+        .query_map(rusqlite::params![safe_query, limit], |row| {
+            Ok(SongSearchResult {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                artist: row.get(2)?,
+                lyrics_snippet: row.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+    for item in iter {
+        results.push(item.map_err(|e| e.to_string())?);
+    }
+
+    Ok(results)
 }

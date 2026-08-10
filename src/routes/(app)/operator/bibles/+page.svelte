@@ -13,6 +13,7 @@
     import { settingsState } from "$lib/state/settings.svelte";
     import { goto } from "$app/navigation";
     import { chunkProse, switchBibleVersionLive } from "$lib/utils/helper";
+    import type { FtsSearchResult } from "$lib/commands/bible-db";
 
     // Local UI State
     let searchInput: HTMLInputElement;
@@ -22,24 +23,25 @@
     let lastScrolledVerse = $state<number | null>(null);
     const fetchingVerses = new Set<string>();
 
-    // Load versions when the page mounts
+    // --- NEW: Search State ---
+    let searchResults = $state<FtsSearchResult[]>([]);
+    let isSearching = $state(false);
+    let searchTimeout: ReturnType<typeof setTimeout>;
+
     onMount(() => {
         if (bibleState.versions.length === 0) {
             bibleState.loadVersions();
         }
     });
 
-    // 1. Filter versions based on settings state
     let enabledVersions = $derived.by(() => {
         const enabledIds = (settingsState.config as any).enabledBibles || [];
         if (enabledIds.length === 0) return bibleState.versions;
         return bibleState.versions.filter((v) => enabledIds.includes(v.id));
     });
 
-    // 2. Parse the query intelligently (e.g. "rev 3 16" -> Book: rev, Ch: 3, V: 16)
     let parsedQuery = $derived.by(() => {
         const q = smartQuery.trimStart().toLowerCase();
-        // Regex matches: [Optional Number] [Book Text] [Space] [Chapter Number] [Space or Colon] [Verse Number]
         const regex =
             /^(\d?\s*[a-z]+(?:[\s-]*[a-z]+)*)\s*(?:(\d+)\s*(?:[:\s]\s*(\d+))?)?$/i;
         const match = q.match(regex);
@@ -52,31 +54,45 @@
         };
     });
 
-    // 2.5 NEW: Auto-detect Version Abbreviations in the search query
+    let filteredBooks = $derived(
+        bibleState.books.filter((book) =>
+            book.name?.toLowerCase().includes(parsedQuery.book),
+        ),
+    );
+
+    // --- NEW: Unified Command Bar Logic (Nav vs Search) ---
+    $effect(() => {
+        const query = smartQuery.trim();
+        // Heuristic: If query > 2 chars and doesn't match any book, it's a phrase search
+        if (query.length > 2 && filteredBooks.length === 0) {
+            isSearching = true;
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                searchResults = await bibleState.search(query, 50);
+                isSearching = false;
+            }, 200); // 200ms debounce
+        } else {
+            searchResults = [];
+            isSearching = false;
+        }
+    });
+
     $effect(() => {
         const parts = smartQuery.trimStart().split(" ");
         if (parts.length > 1) {
             const firstWord = parts[0].toLowerCase();
-
             const matchedVersion = enabledVersions.find(
                 (v) => v.abbreviation?.toLowerCase() === firstWord,
             );
 
             if (matchedVersion) {
                 if (bibleState.selectedVersion !== matchedVersion.id) {
-                    // Swap it live!
                     switchBibleVersionLive(matchedVersion.id);
                 }
                 smartQuery = smartQuery.substring(firstWord.length).trimStart();
             }
         }
     });
-
-    let filteredBooks = $derived(
-        bibleState.books.filter((book) =>
-            book.name?.toLowerCase().includes(parsedQuery.book),
-        ),
-    );
 
     function lazyLoadVerse(node: HTMLElement, verseId: string) {
         const observer = new IntersectionObserver(
@@ -85,7 +101,6 @@
                     const verse = bibleState.verses.find(
                         (v) => v.id === verseId,
                     );
-                    // Only fetch if it's explicitly null (not loaded yet) and not already fetching
                     if (
                         verse &&
                         verse.text === null &&
@@ -98,7 +113,6 @@
                     }
                 }
             },
-
             { root: null, rootMargin: "200px" },
         );
         observer.observe(node);
@@ -109,27 +123,22 @@
         };
     }
 
-    // 3. Sync State: Auto-select Book
     $effect(() => {
-        if (parsedQuery.book) {
+        if (parsedQuery.book && searchResults.length === 0) {
             const exactMatch = filteredBooks.find(
                 (b) => b.name?.toLowerCase() === parsedQuery.book,
             );
-
             if (exactMatch) {
-                if (bibleState.selectedBook !== exactMatch.id) {
+                if (bibleState.selectedBook !== exactMatch.id)
                     bibleState.selectBook(exactMatch.id);
-                }
             } else if (filteredBooks.length === 1) {
                 const targetBook = filteredBooks[0];
-                if (bibleState.selectedBook !== targetBook.id) {
+                if (bibleState.selectedBook !== targetBook.id)
                     bibleState.selectBook(targetBook.id);
-                }
             }
         }
     });
 
-    // 4. Sync State: Auto-select Chapter
     $effect(() => {
         if (
             bibleState.selectedBook &&
@@ -149,7 +158,6 @@
         }
     });
 
-    // 5. Sync State: Auto-trigger Verse Scroll on Typing
     $effect(() => {
         if (
             !bibleState.isLoading &&
@@ -164,7 +172,6 @@
         }
     });
 
-    // Scroll to verse when it becomes available
     $effect(() => {
         if (
             bibleState.pendingScrollVerse !== null &&
@@ -194,10 +201,8 @@
         }
     });
 
-    // 6. Keyboard Interactions
     function handleSmartInputKeydown(e: KeyboardEvent) {
         if (e.key === "Escape") {
-            // NEW: Press Escape to instantly drop focus from the search bar
             e.preventDefault();
             searchInput?.blur();
             return;
@@ -207,7 +212,6 @@
             const exactMatch = filteredBooks.find(
                 (b) => b.name?.toLowerCase() === parsedQuery.book,
             );
-
             if (parsedQuery.chapter === null) {
                 if (exactMatch) {
                     e.preventDefault();
@@ -227,31 +231,25 @@
                 }
             }
         } else if (e.key === "Enter") {
-            // NEW: If they just typed a translation abbreviation and hit Enter, switch versions!
             const exactVersion = enabledVersions.find(
                 (v) =>
                     v.abbreviation?.toLowerCase() ===
                     smartQuery.trim().toLowerCase(),
             );
-
             if (exactVersion && parsedQuery.chapter === null) {
                 e.preventDefault();
-                // Swap it live!
                 switchBibleVersionLive(exactVersion.id);
                 smartQuery = "";
                 return;
             }
 
             // Normal Enter to fire Verse
-            if (parsedQuery.verse !== null) {
+            if (parsedQuery.verse !== null && searchResults.length === 0) {
                 e.preventDefault();
                 const targetVerse = bibleState.verses.find((v) =>
                     v.reference.endsWith(`:${parsedQuery.verse}`),
                 );
-
-                if (targetVerse) {
-                    sendVerseToProjector(targetVerse);
-                }
+                if (targetVerse) sendVerseToProjector(targetVerse);
             }
         }
     }
@@ -273,12 +271,6 @@
             (v) => v.id === bibleState.selectedVersion,
         );
         const versionAbbr = version?.abbreviation || version?.name || "Bible";
-        const book = bibleState.books.find(
-            (b) => b.id === bibleState.selectedBook,
-        );
-        const chapter = bibleState.chapters.find(
-            (c) => c.id === bibleState.selectedChapter,
-        );
         const linesPerSlide = (settingsState.config as any).linesPerSlide || 0;
         const currentFontScale =
             settingsState.config.projector?.textScale ?? 1.0;
@@ -286,27 +278,65 @@
         const bibleCue = {
             id: `bible_${bibleState.selectedVersion}_${bibleState.selectedChapter}`,
             type: "bible",
-            title: `${book?.name} ${chapter?.number}`,
+            title: verse.reference, // Use specific reference
             artist: versionAbbr,
-            sections: bibleState.verses.map((v) => {
-                const chunks = chunkProse(
-                    v.text || "Loading...",
-                    linesPerSlide,
-                    currentFontScale,
-                );
-                return {
-                    id: `verse_${v.id}`,
-                    title: v.reference,
-                    slides: chunks.map((chunkText, i) => ({
-                        id: `slide_${v.id}_${i}`,
+            sections: [
+                {
+                    id: `verse_${verse.id}`,
+                    title: verse.reference,
+                    slides: chunkProse(
+                        verse.text || "Loading...",
+                        linesPerSlide,
+                        currentFontScale,
+                    ).map((chunkText, i, arr) => ({
+                        id: `slide_${verse.id}_${i}`,
                         text: chunkText,
-                        reference: `${v.reference} (${versionAbbr})${chunks.length > 1 ? ` [${i + 1}/${chunks.length}]` : ""}`,
+                        reference: `${verse.reference} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
                     })),
-                };
-            }),
+                },
+            ],
         };
 
-        presentation.fire(bibleCue, `verse_${verse.id}`);
+        presentation.fire(bibleCue, `slide_${verse.id}_0`);
+        goto("/operator");
+    }
+
+    // --- NEW: Fire Search Result directly to projector ---
+    async function sendSearchResultToProjector(result: FtsSearchResult) {
+        if (!bibleState.selectedVersion) return;
+
+        const version = bibleState.versions.find(
+            (v) => v.id === bibleState.selectedVersion,
+        );
+        const versionAbbr = version?.abbreviation || version?.name || "Bible";
+        const linesPerSlide = (settingsState.config as any).linesPerSlide || 0;
+        const currentFontScale =
+            settingsState.config.projector?.textScale ?? 1.0;
+
+        const bibleCue = {
+            id: `bible_search_${Date.now()}`,
+            type: "bible",
+            title: result.reference,
+            artist: versionAbbr,
+            sections: [
+                {
+                    id: `sec_search`,
+                    title: result.reference,
+                    // CRITICAL: We use full_text here so the live screen doesn't show <mark> tags or '...'
+                    slides: chunkProse(
+                        result.full_text,
+                        linesPerSlide,
+                        currentFontScale,
+                    ).map((chunkText, i, arr) => ({
+                        id: `slide_${i}`,
+                        text: chunkText,
+                        reference: `${result.reference} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
+                    })),
+                },
+            ],
+        };
+
+        presentation.fire(bibleCue, `slide_0`);
         goto("/operator");
     }
 </script>
@@ -320,10 +350,7 @@
         }
     }}
     onshortcut-escape={() => {
-        // Also supports the global event hook if triggered outside the input
-        if (document.activeElement === searchInput) {
-            searchInput.blur();
-        }
+        if (document.activeElement === searchInput) searchInput.blur();
     }}
 />
 
@@ -341,20 +368,19 @@
         {/if}
 
         <div class="p-4 flex flex-col gap-4 h-full min-h-0">
-            <!-- Translation Selector -->
+            <!-- Translation Selector (Unchanged) -->
             <div class="relative z-50">
                 <label
                     for="transalation-selector"
-                    class="block text-xs font-semibold text-zinc-400 mb-2 uppercase tracking-wider"
+                    class="block text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-wider"
                 >
                     Translation
                 </label>
-
                 <button
                     id="transalation-selector"
                     type="button"
                     onclick={() => (isTranslationOpen = !isTranslationOpen)}
-                    class="w-full flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:border-violet-600 focus:ring-1 focus:ring-violet-600 transition-colors outline-none cursor-pointer"
+                    class="w-full flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 hover:border-violet-600 transition-colors outline-none cursor-pointer"
                 >
                     <span class="truncate font-medium">
                         {#if bibleState.selectedVersion}
@@ -378,7 +404,6 @@
                     />
                 </button>
 
-                <!-- Custom Dropdown Menu -->
                 {#if isTranslationOpen}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -386,7 +411,6 @@
                         class="fixed inset-0 z-40"
                         onclick={() => (isTranslationOpen = false)}
                     ></div>
-
                     <div
                         class="absolute top-full left-0 w-full mt-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden max-h-60 overflow-y-auto custom-scrollbar flex flex-col py-1"
                     >
@@ -397,7 +421,7 @@
                                     switchBibleVersionLive(version.id);
                                     isTranslationOpen = false;
                                 }}
-                                class="w-full text-left px-4 py-2.5 text-sm transition-colors..."
+                                class="w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-zinc-800"
                             >
                                 {version.abbreviation || version.name}
                             </button>
@@ -406,7 +430,7 @@
                 {/if}
             </div>
 
-            <!-- Fast Book Search -->
+            <!-- Unified Search Bar -->
             <div class="relative">
                 <Search
                     size={16}
@@ -415,7 +439,7 @@
                 <input
                     bind:this={searchInput}
                     type="text"
-                    placeholder="Search (e.g. 'AMP John 3 16')"
+                    placeholder="Search nav (Rev 3 16) or text ('passed away')"
                     bind:value={smartQuery}
                     onkeydown={handleSmartInputKeydown}
                     disabled={!bibleState.selectedVersion}
@@ -423,9 +447,12 @@
                 />
             </div>
 
-            <!-- Two-pane internal layout for Books and Chapters -->
-            <div class="flex-1 flex gap-2 min-h-0 overflow-hidden relative">
-                {#if bibleState.isLoading && bibleState.selectedVersion && !bibleState.selectedChapter}
+            <!-- Books/Chapters layout (Only visible if NOT searching text) -->
+            <div
+                class="flex-1 flex gap-2 min-h-0 overflow-hidden relative"
+                class:opacity-30={searchResults.length > 0 || isSearching}
+            >
+                {#if bibleState.isLoading && bibleState.selectedVersion && !bibleState.selectedChapter && !isSearching}
                     <div
                         class="absolute inset-0 bg-zinc-950/70 z-10 flex items-center justify-center backdrop-blur-sm rounded-lg"
                     >
@@ -435,16 +462,14 @@
                         />
                     </div>
                 {/if}
-                <!-- Books List -->
                 <div class="w-3/5 flex flex-col">
                     <label
-                        for="bible-book"
+                        for="books"
                         class="block text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-wider"
+                        >Book</label
                     >
-                        Book
-                    </label>
                     <div
-                        id="bible-book"
+                        id="books"
                         class="overflow-y-auto flex-1 space-y-0.5 pr-1 custom-scrollbar"
                     >
                         {#each filteredBooks as book (book.id)}
@@ -461,18 +486,16 @@
                     </div>
                 </div>
 
-                <!-- Chapter Grid -->
                 <div
                     class="w-2/5 flex flex-col border-l border-zinc-800/50 pl-2"
                 >
                     <label
-                        for="bible-chapters"
+                        for="chapters"
                         class="block text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-wider"
+                        >Ch</label
                     >
-                        Ch
-                    </label>
                     <div
-                        id="bible-chapters"
+                        id="chapters"
                         class="overflow-y-auto flex-1 custom-scrollbar"
                     >
                         {#if bibleState.chapters.length > 0}
@@ -489,18 +512,12 @@
                                             class="px-2 py-1.5 rounded-md text-sm font-medium transition-colors {bibleState.selectedChapter ===
                                             chapter.id
                                                 ? 'bg-violet-600 text-white shadow-md shadow-violet-900/20'
-                                                : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 border border-zinc-800'}"
+                                                : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800 border border-zinc-800'}"
                                         >
                                             {chapter.number}
                                         </button>
                                     {/if}
                                 {/each}
-                            </div>
-                        {:else}
-                            <div
-                                class="h-full flex items-center justify-center text-zinc-600 text-xs text-center px-2"
-                            >
-                                Select a book
                             </div>
                         {/if}
                     </div>
@@ -509,9 +526,9 @@
         </div>
     </div>
 
-    <!-- RIGHT PANE: Verses (2/3 width) -->
+    <!-- RIGHT PANE: Verses & Search Results -->
     <div class="flex-1 flex flex-col min-w-0 bg-zinc-950 relative">
-        {#if bibleState.isLoading && bibleState.selectedChapter}
+        {#if (bibleState.isLoading && bibleState.selectedChapter) || isSearching}
             <div
                 class="absolute inset-0 bg-zinc-950/50 z-10 flex items-center justify-center"
             >
@@ -519,8 +536,87 @@
             </div>
         {/if}
 
-        {#if bibleState.verses.length > 0}
-            <!-- Header -->
+        {#if searchResults.length > 0 || (smartQuery.length > 2 && filteredBooks.length === 0)}
+            <!-- SEARCH RESULTS VIEW -->
+            <div
+                class="px-6 py-4 border-b border-zinc-800 bg-zinc-950/80 sticky top-0 z-10 backdrop-blur-sm flex justify-between items-end"
+            >
+                <div>
+                    <h2 class="text-2xl font-bold text-zinc-100 tracking-tight">
+                        Search Results
+                    </h2>
+                    <p class="text-sm text-violet-400 font-medium mt-1">
+                        "{smartQuery}"
+                    </p>
+                </div>
+                <div
+                    class="text-xs text-zinc-500 font-medium bg-zinc-900 px-2 py-1 rounded-md"
+                >
+                    {searchResults.length} results
+                </div>
+            </div>
+
+            <div
+                class="flex-1 overflow-y-auto px-6 py-4 space-y-2 custom-scrollbar"
+            >
+                {#if searchResults.length === 0 && !isSearching}
+                    <div
+                        class="flex flex-col items-center justify-center h-full text-zinc-500 gap-2 mt-10"
+                    >
+                        <Search size={32} class="opacity-20" />
+                        <p>No verses found for "{smartQuery}"</p>
+                    </div>
+                {:else}
+                    {#each searchResults as result}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <div
+                            onmouseenter={() =>
+                                (hoveredVerseId = result.reference)}
+                            onmouseleave={() => (hoveredVerseId = null)}
+                            ondblclick={() =>
+                                sendSearchResultToProjector(result)}
+                            class="group relative w-full text-left pl-6 pr-16 py-4 rounded-xl border transition-all duration-200 cursor-pointer {hoveredVerseId ===
+                            result.reference
+                                ? 'bg-violet-900/10 border-violet-500/30 shadow-sm'
+                                : 'bg-zinc-900/30 border-zinc-800/30 hover:bg-zinc-900/60'}"
+                        >
+                            <div class="text-violet-400 font-bold mb-1">
+                                {result.reference}
+                            </div>
+                            <!-- Render the HTML so the Rust <mark> tags work -->
+                            <div
+                                class="text-zinc-200 text-lg leading-relaxed font-medium"
+                            >
+                                {@html result.text}
+                            </div>
+
+                            {#if hoveredVerseId === result.reference}
+                                <div
+                                    class="absolute right-4 top-1/2 -translate-y-1/2 flex gap-2"
+                                >
+                                    <button
+                                        onclick={(e) => {
+                                            e.stopPropagation();
+                                            sendSearchResultToProjector(result);
+                                        }}
+                                        class="p-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white shadow-lg transition-all scale-95 hover:scale-100 flex items-center gap-2"
+                                        title="Send Live"
+                                    >
+                                        <Play size={16} class="fill-current" />
+                                        <span
+                                            class="text-xs font-bold uppercase tracking-wider pr-1"
+                                            >Live</span
+                                        >
+                                    </button>
+                                </div>
+                            {/if}
+                        </div>
+                    {/each}
+                {/if}
+            </div>
+        {:else if bibleState.verses.length > 0}
+            <!-- NORMAL CHAPTER VERSES VIEW -->
             <div
                 class="px-6 py-4 border-b border-zinc-800 bg-zinc-950/80 sticky top-0 z-10 backdrop-blur-sm flex justify-between items-end"
             >
@@ -546,13 +642,12 @@
                 </div>
             </div>
 
-            <!-- Verse List -->
             <div
                 class="flex-1 overflow-y-auto px-6 py-4 space-y-2 custom-scrollbar"
             >
                 {#each bibleState.verses as verse (verse.id)}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <div
                         id="verse-node-{verse.id}"
                         use:lazyLoadVerse={verse.id}
@@ -575,7 +670,7 @@
                         class="group relative w-full text-left pl-12 pr-16 py-3 rounded-xl border transition-all duration-200 cursor-pointer {hoveredVerseId ===
                         verse.id
                             ? 'bg-violet-900/10 border-violet-500/30 shadow-sm'
-                            : 'bg-zinc-900/30 border-zinc-800/30 hover:bg-zinc-900/60 hover:border-zinc-700'}"
+                            : 'bg-zinc-900/30 border-zinc-800/30 hover:bg-zinc-900/60'}"
                     >
                         <span
                             class="absolute left-4 top-3.5 text-zinc-500 text-sm font-mono font-bold w-6 text-right"
@@ -605,7 +700,6 @@
                                         sendVerseToProjector(verse);
                                     }}
                                     class="p-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white shadow-lg transition-all scale-95 hover:scale-100 flex items-center gap-2"
-                                    title="Send Live"
                                 >
                                     <Play size={16} class="fill-current" />
                                     <span
@@ -619,15 +713,13 @@
                 {/each}
             </div>
         {:else}
+            <!-- EMPTY STATE -->
             <div
                 class="flex-1 flex flex-col items-center justify-center text-zinc-500 gap-4"
             >
                 <BookOpen size={48} class="opacity-20" />
                 <p class="text-lg font-medium">
-                    Select a chapter to view verses
-                </p>
-                <p class="text-sm opacity-60">
-                    Use the sidebar to navigate the Bible
+                    Select a chapter or search for a verse
                 </p>
             </div>
         {/if}

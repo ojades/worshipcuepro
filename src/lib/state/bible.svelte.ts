@@ -7,8 +7,11 @@ import {
   deleteSystemBibleCacheAPI,
   getBibleCacheAPI,
   setBibleCacheAPI,
+  bulkInsertBibleFtsAPI,
+  searchBibleFtsAPI,
+  deleteBibleFtsVersionAPI,
+  type FtsVerseInsert,
 } from "$lib/commands/bible-db";
-import { getDB } from "$lib/db";
 import { settingsState } from "./settings.svelte";
 
 const CACHE_TTL_MS = 20 * 24 * 60 * 60 * 1000; // 20 Days
@@ -236,8 +239,8 @@ class BibleState {
   // SYSTEM BIBLE IMPORTER
   // ----------------------------------------
   /**
-   * Feed this function the raw JSON array. It will organize it into the cache DB.
-   * Call this during app startup (e.g., in a layout `+page.ts` or `onMount`).
+   * Feed this function the raw JSON array. It will organize it into the cache DB
+   * AND insert into the FTS engine for instant searching.
    */
   async importSystemBible(jsonData: any[]) {
     if (!jsonData || jsonData.length === 0) return;
@@ -276,18 +279,20 @@ class BibleState {
       );
     }
 
-    // 2. Group the flat JSON into Books -> Chapters -> Verses
+    // 2. Group the flat JSON into Books -> Chapters -> Verses and prep FTS
     const booksMap = new Map<number, any>();
+    const ftsVerses: FtsVerseInsert[] = [];
 
     for (const row of jsonData) {
       const bookNum = row.book;
       const chapNum = row.chapter;
       const bookUSM = BOOK_CODES[bookNum - 1];
+      const bookName = BOOK_NAMES[bookNum - 1];
 
       if (!booksMap.has(bookNum)) {
         booksMap.set(bookNum, {
           id: bookUSM,
-          name: BOOK_NAMES[bookNum - 1],
+          name: bookName,
           chapters: new Map(),
         });
       }
@@ -297,16 +302,23 @@ class BibleState {
         book.chapters.set(chapNum, []);
       }
 
+      const reference = `${book.name} ${chapNum}:${row.verse}`;
+
       book.chapters.get(chapNum).push({
         id: `${bookUSM}.${chapNum}.${row.verse}`,
-        reference: `${book.name} ${chapNum}:${row.verse}`,
+        reference,
         text: row.text,
       });
+
+      // Prepare FTS payload
+      if (row.text) {
+        ftsVerses.push({ reference, text: row.text });
+      }
     }
 
     // 3. Write structured data to cache DB concurrently for MASSIVE speed boost
     const unifiedBooks: UnifiedBook[] = [];
-    const dbPromises: Promise<void>[] = []; // Collect all DB inserts here
+    const dbPromises: Promise<void>[] = [];
 
     for (const [bookNum, bookData] of booksMap.entries()) {
       const strBookId = bookData.id;
@@ -318,7 +330,6 @@ class BibleState {
         const uniqueChapId = `${strBookId}.${chapNum}`;
         unifiedChapters.push({ id: uniqueChapId, number: chapNum.toString() });
 
-        // Add verse insert to promise array (do not await here!)
         dbPromises.push(
           this.cacheDB.set(
             `verses_${prefixedId}_${uniqueChapId}`,
@@ -328,7 +339,6 @@ class BibleState {
         );
       }
 
-      // Add chapter list insert to promise array
       dbPromises.push(
         this.cacheDB.set(
           `chapters_${prefixedId}_${strBookId}`,
@@ -338,7 +348,6 @@ class BibleState {
       );
     }
 
-    // Add book list and flag to promise array
     dbPromises.push(
       this.cacheDB.set(
         `books_${prefixedId}`,
@@ -350,16 +359,19 @@ class BibleState {
       this.cacheDB.set(importFlagKey, true, 10 * 365 * 24 * 60 * 60 * 1000),
     );
 
-    // Fire them all at once!
     await Promise.all(dbPromises);
 
-    for (const dbTask of dbPromises) {
-      await dbTask;
+    // 4. Fire the blazing-fast Rust FTS Bulk Insert transaction
+    try {
+      console.log(
+        `[System Bible] Indexing ${ftsVerses.length} verses for search...`,
+      );
+      await bulkInsertBibleFtsAPI(prefixedId, ftsVerses);
+    } catch (ftsError) {
+      console.error("[System Bible] FTS Indexing failed:", ftsError);
     }
 
     console.log(`[System Bible] ${versionAbbr} import complete!`);
-
-    // await this.loadVersions();
   }
 
   /**
@@ -377,7 +389,6 @@ class BibleState {
 
     sanitizedXml = sanitizedXml
       .replace(/&(?!#?[a-zA-Z0-9]+;)/g, "&amp;")
-
       .replace(/[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\u10000-\u10FFFF]/g, "");
 
     const parser = new DOMParser();
@@ -407,7 +418,6 @@ class BibleState {
       "XML";
 
     const jsonData: any[] = [];
-
     const books = doc.querySelectorAll("book");
 
     books.forEach((bookNode) => {
@@ -415,15 +425,15 @@ class BibleState {
       if (!bookNumStr) return;
 
       const bookNum = parseInt(bookNumStr, 10);
-
       const chapters = bookNode.querySelectorAll("chapter");
+
       chapters.forEach((chapterNode) => {
         const chapNumStr = chapterNode.getAttribute("number");
         if (!chapNumStr) return;
 
         const chapNum = parseInt(chapNumStr, 10);
-
         const verses = chapterNode.querySelectorAll("verse");
+
         verses.forEach((verseNode) => {
           const verseNumStr = verseNode.getAttribute("number");
           if (!verseNumStr) return;
@@ -453,7 +463,6 @@ class BibleState {
     console.log(
       `[System Bible] XML parsed. Found ${jsonData.length} verses. Routing to DB Importer...`,
     );
-
     await this.importSystemBible(jsonData);
   }
 
@@ -484,10 +493,13 @@ class BibleState {
     this.isLoading = true;
 
     try {
-      // 1. Delete all cached books, chapters, verses, and the import flag (Handled by Rust)
+      // 1. Delete all cached JSON data
       await deleteSystemBibleCacheAPI(prefixedId);
 
-      // 2. Remove it from the registered system versions array
+      // 2. Delete the FTS5 Native Index
+      await deleteBibleFtsVersionAPI(prefixedId);
+
+      // 3. Remove it from the registered system versions array
       const systemVersions =
         (await this.cacheDB.get<UnifiedBible[]>("system_bible_versions")) || [];
       const updatedSystemVersions = systemVersions.filter(
@@ -500,10 +512,10 @@ class BibleState {
         10 * 365 * 24 * 60 * 60 * 1000,
       );
 
-      // 3. Clear the unified memory and DB cache so the UI updates
+      // 4. Clear the unified memory and DB cache so the UI updates
       await this.cacheDB.delete("unified_bible_versions");
 
-      // 4. Deselect if it's currently active
+      // 5. Deselect if it's currently active
       if (this.selectedVersion === prefixedId) {
         this.selectedVersion = null;
         this.selectedBook = null;
@@ -511,11 +523,29 @@ class BibleState {
         this.verses = [];
       }
 
-      // 5. Force a full reload to reflect the deleted state
+      // 6. Force a full reload to reflect the deleted state
       await this.refreshVersions();
       console.log(`[System Bible] ${prefixedId} successfully deleted.`);
     } catch (err) {
       console.error("[System Bible] Failed to delete translation:", err);
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  // ----------------------------------------
+  // BLAZING FAST NATIVE FTS SEARCH
+  // ----------------------------------------
+  async search(query: string, limit: number = 50) {
+    if (!this.selectedVersion || query.trim().length < 2) return [];
+
+    this.isLoading = true;
+    try {
+      // Queries directly against the extremely fast SQLite FTS5 virtual table via Rust IPC
+      return await searchBibleFtsAPI(this.selectedVersion, query, limit);
+    } catch (err) {
+      console.error("Bible search failed:", err);
+      return [];
     } finally {
       this.isLoading = false;
     }
@@ -528,7 +558,6 @@ class BibleState {
     console.log("Forcing refresh of Bible versions...");
     this.isLoading = true;
 
-    this.versionsCache = null;
     this.versionsCache = null;
     this.booksCache.clear();
     this.chaptersCache.clear();
@@ -688,14 +717,11 @@ class BibleState {
 
       // ADAPTER ROUTING
       if (provider === "api.bible") {
-        // api.bible still lazy-loads books
         const rawBooks = await bibleClient.getBooks(originalId);
         mappedBooks = rawBooks.map((b) => ({ id: b.id, name: b.name }));
       } else {
-        // YouVersion bulk-loads books AND chapters via the new index endpoint
         const indexData = await youversionClient.getIndex(originalId);
 
-        // Map the books
         mappedBooks = indexData.books.map((b: any) => ({
           id: b.id,
           name: b.title || b.full_title || "Unknown",
@@ -714,7 +740,6 @@ class BibleState {
 
           const chapterCacheKey = `chapters_${prefixedId}_${book.id}`;
           this.chaptersCache.set(chapterCacheKey, mappedChapters);
-
           this.cacheDB
             .set(chapterCacheKey, mappedChapters)
             .catch(console.error);
@@ -858,13 +883,11 @@ class BibleState {
   }
 
   async resolveVerseText(verseId: string) {
-    // Find the verse in our current state
     const verseIndex = this.verses.findIndex((v) => v.id === verseId);
     if (verseIndex === -1) return null;
 
     const verse = this.verses[verseIndex];
 
-    // If we already have the text (api.bible, or already fetched), return it instantly
     if (verse.text) return verse.text;
 
     const { provider, originalId } = this.getProviderAndId(
@@ -873,14 +896,11 @@ class BibleState {
 
     if (provider === "youversion") {
       try {
-        // Fetch the individual verse from YouVersion (e.g., JHN.3.16)
         const rawVerse = await youversionClient.getVerses(originalId, verseId);
 
-        // Update the state so we don't have to fetch it again
         this.verses[verseIndex].text = rawVerse.content;
         this.verses[verseIndex].reference = rawVerse.reference;
 
-        // Update caches
         const cacheKey = `verses_${this.selectedVersion}_${this.selectedChapter}`;
         this.versesCache.set(cacheKey, this.verses);
         this.cacheDB.set(cacheKey, this.verses).catch(console.error);

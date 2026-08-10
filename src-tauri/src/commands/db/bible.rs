@@ -1,6 +1,6 @@
 // /src-tauri/src/commands/db/bible.rs
 use crate::db::DbPool;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 #[derive(Serialize)]
@@ -93,5 +93,104 @@ pub fn delete_system_bible_cache(
     )
     .map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct FtsVerseInsert {
+    pub reference: String,
+    pub text: String,
+}
+
+#[derive(Serialize)]
+pub struct FtsSearchResult {
+    pub reference: String,
+    pub text: String,
+    pub full_text: String,
+}
+
+#[tauri::command]
+pub fn bulk_insert_bible_fts(
+    pool: State<'_, DbPool>,
+    version: String,
+    verses: Vec<FtsVerseInsert>,
+) -> Result<(), String> {
+    let mut conn = pool.get().map_err(|e| e.to_string())?;
+
+    // Using a transaction inserts the entire Bible in < 1 second
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare("INSERT INTO bible_fts (version, reference, text) VALUES (?1, ?2, ?3)")
+            .map_err(|e| e.to_string())?;
+
+        for verse in verses {
+            stmt.execute((&version, &verse.reference, &verse.text))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn search_bible_fts(
+    pool: State<'_, DbPool>,
+    version: String,
+    query_string: String,
+    limit: i32,
+) -> Result<Vec<FtsSearchResult>, String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+
+    let safe_query = query_string
+        .replace("\"", "")
+        .replace("'", "")
+        .split_whitespace()
+        .map(|s| format!("{}*", s))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if safe_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Return reference, HTML snippet, and raw text
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                reference,
+                snippet(bible_fts, 2, '<mark class=\"bg-violet-900/60 text-violet-300 font-bold px-1 rounded\">', '</mark>', '...', 64),
+                text
+             FROM bible_fts
+             WHERE version = ?1 AND bible_fts MATCH ?2
+             ORDER BY rank
+             LIMIT ?3",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let iter = stmt
+        .query_map(rusqlite::params![version, safe_query, limit], |row| {
+            Ok(FtsSearchResult {
+                reference: row.get(0)?,
+                text: row.get(1)?,
+                full_text: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+    for item in iter {
+        results.push(item.map_err(|e| e.to_string())?);
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
+pub fn delete_bible_fts_version(pool: State<'_, DbPool>, version: String) -> Result<(), String> {
+    let conn = pool.get().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM bible_fts WHERE version = ?1", [&version])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }

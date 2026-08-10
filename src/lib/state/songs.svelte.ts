@@ -6,10 +6,13 @@ import {
   insertSongAPI,
   updateSongAPI,
   deleteSongAPI,
+  type SongSearchResult,
+  searchSongsFtsAPI,
 } from "$lib/commands/song-db";
 
 class SongsState {
   songs = $state<SongCue[]>([]);
+  isSearching = $state(false);
 
   async load() {
     try {
@@ -20,6 +23,20 @@ class SongsState {
         message: "Failed to load songs from database.",
         type: "error",
       });
+    }
+  }
+
+  async search(query: string, limit: number = 20): Promise<SongSearchResult[]> {
+    if (query.trim().length < 2) return [];
+
+    this.isSearching = true;
+    try {
+      return await searchSongsFtsAPI(query, limit);
+    } catch (err) {
+      console.error("Song FTS search failed:", err);
+      return [];
+    } finally {
+      this.isSearching = false;
     }
   }
 
