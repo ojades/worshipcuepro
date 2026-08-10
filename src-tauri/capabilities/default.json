@@ -11,37 +11,19 @@
     "sql:allow-execute",
     "dialog:allow-open",
     "fs:default",
+    "shell:default",
     "fs:allow-read",
     "fs:allow-write",
     "fs:allow-remove",
-    "shell:default",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "fs:allow-copy-file",
+    "fs:allow-write-file",
+    "fs:allow-write-text-file",
+    "fs:allow-read-text-file",
     {
       "identifier": "fs:scope",
-      "allow": ["$DOCUMENT/**", "$HOME/**"]
-    },
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-mkdir",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-copy-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-write-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**" }]
+      "allow": [{ "path": "$HOME/**" }, { "path": "$DOCUMENT/**" }]
     }
   ]
 }

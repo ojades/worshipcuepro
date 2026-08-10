@@ -19,6 +19,7 @@
     import ObsSettings from "$lib/components/layout/settings/ObsSettings.svelte";
     import { onMount } from "svelte";
     import { getVersion } from "@tauri-apps/api/app";
+    import MediaSettings from "$lib/components/layout/settings/MediaSettings.svelte";
 
     type Category =
         | "workspace"
@@ -52,7 +53,7 @@
             label: "Manage Fonts",
             icon: SlidersHorizontal,
         },
-        { id: "media", label: "Media Library", icon: Library },
+        { id: "media", label: "Media Settings", icon: Library },
         { id: "obs", label: "OBS Settings", icon: Monitor },
         { id: "integrations", label: "Integrations", icon: Network },
         { id: "about", label: "About", icon: Info },
@@ -109,6 +110,8 @@
             <ObsSettings />
         {:else if activeCategory === "integrations"}
             <Integrations />
+        {:else if activeCategory === "media"}
+            <MediaSettings />
         {:else if activeCategory === "about"}
             <div class="max-w-2xl animate-in fade-in duration-300 space-y-4">
                 <h1 class="text-2xl font-bold text-foreground mb-2">About</h1>

@@ -17,6 +17,8 @@
     import { playlists } from "$lib/state/playlists.svelte";
     import { convertFileSrc } from "@tauri-apps/api/core";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
+    import { settingsState } from "$lib/state/settings.svelte";
+    import { switchBibleVersionLive } from "$lib/utils/helper";
 
     // UX State
     let searchQuery = $state("");
@@ -31,6 +33,36 @@
         { id: "media", label: "Media", icon: ImageIcon },
     ] as const;
 
+    // Filter versions based on settings state for auto-detection
+    let enabledVersions = $derived.by(() => {
+        const enabledIds = (settingsState.config as any).enabledBibles || [];
+        if (enabledIds.length === 0) return bibleState.versions;
+        return bibleState.versions.filter((v) => enabledIds.includes(v.id));
+    });
+
+    // --- NEW: Auto-detect Version Abbreviations in the Quick Finder ---
+    $effect(() => {
+        const parts = searchQuery.trimStart().split(" ");
+        if (parts.length > 1) {
+            const firstWord = parts[0].toLowerCase();
+
+            const matchedVersion = enabledVersions.find(
+                (v) => v.abbreviation?.toLowerCase() === firstWord,
+            );
+
+            if (matchedVersion) {
+                if (bibleState.selectedVersion !== matchedVersion.id) {
+                    // Swap it live!
+                    switchBibleVersionLive(matchedVersion.id);
+                }
+                // Strip the version abbreviation
+                searchQuery = searchQuery
+                    .substring(firstWord.length)
+                    .trimStart();
+            }
+        }
+    });
+
     // Derived Search Results from real state
     let searchResults = $derived.by(() => {
         if (!searchQuery.trim()) return [];
@@ -38,7 +70,23 @@
         const query = searchQuery.toLowerCase();
         let results: any[] = [];
 
-        // 1. Search Songs (Now includes Lyrics!)
+        // 0. Detect pure Version Abbreviation Switch (e.g. just typing "KJV")
+        if (activeTab === "all" || activeTab === "bible") {
+            const exactVersion = enabledVersions.find(
+                (v) => v.abbreviation?.toLowerCase() === query.trim(),
+            );
+            if (exactVersion) {
+                results.push({
+                    id: `version_${exactVersion.id}`,
+                    type: "version_switch",
+                    title: `Switch Bible Translation to ${exactVersion.abbreviation}`,
+                    subtitle: exactVersion.name,
+                    payload: exactVersion,
+                });
+            }
+        }
+
+        // 1. Search Songs
         if (activeTab === "all" || activeTab === "songs") {
             const matchedSongs = songsState.songs
                 .filter(
@@ -49,7 +97,6 @@
                             s.raw_lyrics.toLowerCase().includes(query)),
                 )
                 .map((s) => {
-                    // Small UX touch: if it only matched the lyrics, indicate that
                     const matchesTitleOrArtist =
                         s.title.toLowerCase().includes(query) ||
                         (s.artist && s.artist.toLowerCase().includes(query));
@@ -67,7 +114,7 @@
             results.push(...matchedSongs);
         }
 
-        // 2. Search Bible (Smart Parser)
+        // 2. Search Bible (Smart Parser with Exact Match Logic)
         if (activeTab === "all" || activeTab === "bible") {
             const regex =
                 /^(\d?\s*[a-z]+(?:[\s-]*[a-z]+)*)\s*(?:(\d+)\s*(?:[:\s]\s*(\d+))?)?$/i;
@@ -79,8 +126,16 @@
                     b.name.toLowerCase().includes(bookQuery),
                 );
 
-                if (matchedBooks.length === 1) {
-                    const book = matchedBooks[0];
+                // Exact Match logic (Solves the "John" vs "1 John" issue)
+                const exactMatch = matchedBooks.find(
+                    (b) => b.name.toLowerCase() === bookQuery,
+                );
+
+                const book =
+                    exactMatch ||
+                    (matchedBooks.length === 1 ? matchedBooks[0] : null);
+
+                if (book) {
                     const chapter = match[2] ? ` ${match[2]}` : "";
                     const verse = match[3] ? `:${match[3]}` : "";
 
@@ -172,6 +227,8 @@
             if (newCue) {
                 presentation.fire(newCue);
             }
+        } else if (result.type === "version_switch") {
+            switchBibleVersionLive(result.payload.id);
         } else if (result.type === "bible") {
             const { bookId, chapterNum, verseNum } = result.payload;
 
@@ -203,7 +260,7 @@
 >
     <!-- Header: Search Bar & Tabs -->
     <div class="p-3 border-b border-border bg-background/50 space-y-3 shrink-0">
-        <!-- Omni-Search Input (unchanged) -->
+        <!-- Omni-Search Input -->
         <div class="relative group">
             <Search
                 size={18}
@@ -228,7 +285,7 @@
             </div>
         </div>
 
-        <!-- Filter Tabs (unchanged) -->
+        <!-- Filter Tabs -->
         <div class="flex items-center gap-1">
             {#each tabs as tab}
                 <button
@@ -284,7 +341,7 @@
                         <div
                             class="flex items-center gap-3 overflow-hidden w-full"
                         >
-                            <!-- UPDATED: Type Icon / Thumbnail Container -->
+                            <!-- Type Icon / Thumbnail Container -->
                             {const safeUrl =
                                 result.type === "media"
                                     ? result.payload.asset_url ||
@@ -318,7 +375,7 @@
                                     {/if}
                                 {:else if result.type === "song"}
                                     <Music size={14} />
-                                {:else if result.type === "bible"}
+                                {:else if result.type === "bible" || result.type === "version_switch"}
                                     <BookOpen size={14} />
                                 {:else}
                                     <ImageIcon size={14} />
@@ -347,7 +404,10 @@
                             <button
                                 class="shrink-0 px-3 py-1 bg-neon-violet text-white text-[10px] font-bold uppercase tracking-wider rounded flex items-center gap-1 shadow-lg shadow-neon-violet/20 animate-in fade-in slide-in-from-right-2"
                             >
-                                <Play size={10} class="fill-current" /> Fire
+                                <Play size={10} class="fill-current" />
+                                {result.type === "version_switch"
+                                    ? "Apply"
+                                    : "Fire"}
                             </button>
                         {/if}
                     </div>

@@ -42,15 +42,28 @@ export async function initDB(workspacePath: string | null = null) {
     END;`);
 
     await db.execute(`
-            CREATE TABLE IF NOT EXISTS media (
-                id TEXT PRIMARY KEY,
-                filename TEXT NOT NULL,
-                filepath TEXT NOT NULL,
-                type TEXT NOT NULL,
-                thumbnail_path TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+                CREATE TABLE IF NOT EXISTS media (
+                    id TEXT PRIMARY KEY,
+                    filename TEXT NOT NULL,
+                    filepath TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    thumbnail_path TEXT,
+                    category TEXT DEFAULT 'Uncategorized',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+
+    // If the column already exists, this will throw an error, which we just silently catch and ignore.
+    try {
+      await db.execute(
+        `ALTER TABLE media ADD COLUMN category TEXT DEFAULT 'Uncategorized'`,
+      );
+      console.log(
+        "[WorshipCuePro] Patched media table with 'category' column.",
+      );
+    } catch (e) {
+      // Column already exists, safe to ignore
+    }
 
     await db.execute(`
             CREATE TABLE IF NOT EXISTS playlists (

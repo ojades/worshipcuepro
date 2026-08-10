@@ -6,7 +6,7 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { bibleState } from "$lib/state/bible.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
-    import { chunkProse } from "$lib/utils/helper";
+    import { chunkProse, switchBibleVersionLive } from "$lib/utils/helper";
     import {
         Settings2,
         Edit2,
@@ -109,89 +109,12 @@
     async function switchBibleVersion(newVersionId: string) {
         if (!isBibleCue || !presentation.activeCue || isSwitchingVersion)
             return;
+
         isVersionDropdownOpen = false;
-
-        const targetBook = bibleState.selectedBook;
-        const targetChapter = bibleState.selectedChapter;
-
-        if (!targetBook || !targetChapter) {
-            console.warn("No active book/chapter in bibleState to switch.");
-            return;
-        }
-
         isSwitchingVersion = true;
 
         try {
-            // 1. Save active verse id safely so we don't lose our place
-            const currentActiveSlideId = presentation.activeSlideId;
-            // Use optional chaining safely in case sections array is empty/missing
-            let activeVerseId = presentation.activeCue.sections?.[0]?.id;
-
-            if (currentActiveSlideId && presentation.activeCue.sections) {
-                const activeSection = presentation.activeCue.sections.find(
-                    (s: any) =>
-                        s.slides?.some(
-                            (sl: any) => sl.id === currentActiveSlideId,
-                        ),
-                );
-                if (activeSection) activeVerseId = activeSection.id;
-            }
-
-            // 2. Load new version data down the tree
-            await bibleState.selectVersion(newVersionId);
-            await bibleState.selectBook(targetBook);
-            await bibleState.selectChapter(targetChapter);
-
-            // 3. Resolve the active verse text immediately (only if we found a valid ID)
-            if (activeVerseId) {
-                const activeVerseRawId = activeVerseId.replace("verse_", "");
-                await bibleState.resolveVerseText(activeVerseRawId);
-            }
-
-            // 4. Rebuild the Cue
-            const version = bibleState.versions.find(
-                (v) => v.id === bibleState.selectedVersion,
-            );
-            const versionAbbr =
-                version?.abbreviation || version?.name || "Bible";
-            const book = bibleState.books.find(
-                (b) => b.id === bibleState.selectedBook,
-            );
-            const chapter = bibleState.chapters.find(
-                (c) => c.id === bibleState.selectedChapter,
-            );
-            const linesPerSlide =
-                (settingsState.config as any).linesPerSlide || 0;
-            const currentFontScale =
-                settingsState.config.projector?.textFormat?.fontSizeScale ??
-                1.0;
-
-            const bibleCue = {
-                id: `bible_${bibleState.selectedVersion}_${bibleState.selectedChapter}`,
-                type: "bible",
-                title: `${book?.name} ${chapter?.number}`,
-                artist: versionAbbr,
-                sections: bibleState.verses.map((v) => {
-                    const chunks = chunkProse(
-                        v.text || "Loading...",
-                        linesPerSlide,
-                        currentFontScale,
-                    );
-                    return {
-                        id: `verse_${v.id}`,
-                        title: v.reference,
-                        slides: chunks.map((chunkText, i) => ({
-                            id: `slide_${v.id}_${i}`,
-                            text: chunkText,
-                            reference: `${v.reference} (${versionAbbr})${chunks.length > 1 ? ` [${i + 1}/${chunks.length}]` : ""}`,
-                        })),
-                    };
-                }),
-            };
-
-            // 5. Fire seamlessly to the screen!
-            // (If activeVerseId is undefined, fire will default to the first slide gracefully)
-            presentation.fire(bibleCue, activeVerseId);
+            await switchBibleVersionLive(newVersionId);
         } catch (e) {
             console.error("Failed to switch version:", e);
         } finally {

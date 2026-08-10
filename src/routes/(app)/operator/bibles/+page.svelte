@@ -12,14 +12,14 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import { goto } from "$app/navigation";
-    import { chunkProse } from "$lib/utils/helper";
+    import { chunkProse, switchBibleVersionLive } from "$lib/utils/helper";
 
     // Local UI State
+    let searchInput: HTMLInputElement;
     let smartQuery = $state("");
     let hoveredVerseId = $state<string | null>(null);
     let isTranslationOpen = $state(false);
-    let pendingVerseToFire = $state<number | null>(null); // For lag handling
-    let lastScrolledVerse = $state<number | null>(null); // NEW: Track the last auto-scrolled verse
+    let lastScrolledVerse = $state<number | null>(null);
     const fetchingVerses = new Set<string>();
 
     // Load versions when the page mounts
@@ -50,6 +50,26 @@
             chapter: match[2] ? parseInt(match[2]) : null,
             verse: match[3] ? parseInt(match[3]) : null,
         };
+    });
+
+    // 2.5 NEW: Auto-detect Version Abbreviations in the search query
+    $effect(() => {
+        const parts = smartQuery.trimStart().split(" ");
+        if (parts.length > 1) {
+            const firstWord = parts[0].toLowerCase();
+
+            const matchedVersion = enabledVersions.find(
+                (v) => v.abbreviation?.toLowerCase() === firstWord,
+            );
+
+            if (matchedVersion) {
+                if (bibleState.selectedVersion !== matchedVersion.id) {
+                    // Swap it live!
+                    switchBibleVersionLive(matchedVersion.id);
+                }
+                smartQuery = smartQuery.substring(firstWord.length).trimStart();
+            }
+        }
     });
 
     let filteredBooks = $derived(
@@ -91,10 +111,20 @@
 
     // 3. Sync State: Auto-select Book
     $effect(() => {
-        if (parsedQuery.book && filteredBooks.length === 1) {
-            const targetBook = filteredBooks[0];
-            if (bibleState.selectedBook !== targetBook.id) {
-                bibleState.selectBook(targetBook.id);
+        if (parsedQuery.book) {
+            const exactMatch = filteredBooks.find(
+                (b) => b.name?.toLowerCase() === parsedQuery.book,
+            );
+
+            if (exactMatch) {
+                if (bibleState.selectedBook !== exactMatch.id) {
+                    bibleState.selectBook(exactMatch.id);
+                }
+            } else if (filteredBooks.length === 1) {
+                const targetBook = filteredBooks[0];
+                if (bibleState.selectedBook !== targetBook.id) {
+                    bibleState.selectBook(targetBook.id);
+                }
             }
         }
     });
@@ -119,7 +149,7 @@
         }
     });
 
-    // 5. NEW Sync State: Auto-trigger Verse Scroll on Typing
+    // 5. Sync State: Auto-trigger Verse Scroll on Typing
     $effect(() => {
         if (
             !bibleState.isLoading &&
@@ -128,15 +158,13 @@
             parsedQuery.verse !== lastScrolledVerse
         ) {
             lastScrolledVerse = parsedQuery.verse;
-            // Hand this off to the existing scroll effect below
-            bibleState.pendingScrollVerse = parsedQuery.verse;
+            bibleState.pendingScrollVerse = parsedQuery.verse.toString();
         } else if (parsedQuery.verse === null) {
-            // Reset if the user deletes the verse number
             lastScrolledVerse = null;
         }
     });
 
-    // Scroll to verse when it becomes available (or triggered by typing)
+    // Scroll to verse when it becomes available
     $effect(() => {
         if (
             bibleState.pendingScrollVerse !== null &&
@@ -149,7 +177,6 @@
             );
 
             if (targetVerse) {
-                // Slight delay to ensure DOM nodes are fully rendered
                 setTimeout(() => {
                     const el = document.getElementById(
                         `verse-node-${targetVerse.id}`,
@@ -159,36 +186,63 @@
                             behavior: "smooth",
                             block: "center",
                         });
-                        // Highlight the verse automatically for preview
                         hoveredVerseId = targetVerse.id;
                     }
                 }, 50);
             }
-            // Clear pending regardless of success so we don't get stuck
             bibleState.pendingScrollVerse = null;
         }
     });
 
     // 6. Keyboard Interactions
     function handleSmartInputKeydown(e: KeyboardEvent) {
+        if (e.key === "Escape") {
+            // NEW: Press Escape to instantly drop focus from the search bar
+            e.preventDefault();
+            searchInput?.blur();
+            return;
+        }
+
         if (e.key === " " || e.key === ":") {
-            // Hit space to complete the book name
-            if (filteredBooks.length === 1 && parsedQuery.chapter === null) {
-                e.preventDefault();
-                smartQuery = filteredBooks[0].name + " ";
-                return;
+            const exactMatch = filteredBooks.find(
+                (b) => b.name?.toLowerCase() === parsedQuery.book,
+            );
+
+            if (parsedQuery.chapter === null) {
+                if (exactMatch) {
+                    e.preventDefault();
+                    smartQuery = exactMatch.name + " ";
+                    return;
+                } else if (filteredBooks.length === 1) {
+                    e.preventDefault();
+                    smartQuery = filteredBooks[0].name + " ";
+                    return;
+                }
             }
 
-            // NEW: Hit space or colon after chapter to lock it in and prepare for verse
             if (parsedQuery.chapter !== null && parsedQuery.verse === null) {
                 if (!smartQuery.endsWith(":") && !smartQuery.endsWith(" ")) {
                     e.preventDefault();
-                    // Append colon visually so they know to type the verse next
                     smartQuery = smartQuery.trim() + ":";
                 }
             }
         } else if (e.key === "Enter") {
-            // Hit enter to fire the selected verse directly to the projector!
+            // NEW: If they just typed a translation abbreviation and hit Enter, switch versions!
+            const exactVersion = enabledVersions.find(
+                (v) =>
+                    v.abbreviation?.toLowerCase() ===
+                    smartQuery.trim().toLowerCase(),
+            );
+
+            if (exactVersion && parsedQuery.chapter === null) {
+                e.preventDefault();
+                // Swap it live!
+                switchBibleVersionLive(exactVersion.id);
+                smartQuery = "";
+                return;
+            }
+
+            // Normal Enter to fire Verse
             if (parsedQuery.verse !== null) {
                 e.preventDefault();
                 const targetVerse = bibleState.verses.find((v) =>
@@ -210,10 +264,8 @@
         )
             return;
 
-        // Force resolve if the operator clicked it before the observer caught it
         if (!verse.text) {
             await bibleState.resolveVerseText(verse.id);
-            // Re-fetch the verse from state to get the newly populated text
             verse = bibleState.verses.find((v) => v.id === verse.id) || verse;
         }
 
@@ -237,7 +289,6 @@
             title: `${book?.name} ${chapter?.number}`,
             artist: versionAbbr,
             sections: bibleState.verses.map((v) => {
-                // v.text will be null for verses out of view. Pass the fallback string to chunkProse.
                 const chunks = chunkProse(
                     v.text || "Loading...",
                     linesPerSlide,
@@ -259,6 +310,22 @@
         goto("/operator");
     }
 </script>
+
+<svelte:window
+    onshortcut-verse-jump={(e) => {
+        e.preventDefault();
+        if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+        }
+    }}
+    onshortcut-escape={() => {
+        // Also supports the global event hook if triggered outside the input
+        if (document.activeElement === searchInput) {
+            searchInput.blur();
+        }
+    }}
+/>
 
 <div class="flex-1 flex min-h-0 bg-zinc-950">
     <!-- LEFT PANE: Navigation -->
@@ -327,13 +394,10 @@
                             <button
                                 type="button"
                                 onclick={() => {
-                                    bibleState.selectVersion(version.id);
+                                    switchBibleVersionLive(version.id);
                                     isTranslationOpen = false;
                                 }}
-                                class="w-full text-left px-4 py-2.5 text-sm transition-colors {bibleState.selectedVersion ===
-                                version.id
-                                    ? 'bg-violet-600/20 text-violet-400 font-medium'
-                                    : 'text-zinc-300 hover:bg-zinc-800'}"
+                                class="w-full text-left px-4 py-2.5 text-sm transition-colors..."
                             >
                                 {version.abbreviation || version.name}
                             </button>
@@ -349,8 +413,9 @@
                     class="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-500"
                 />
                 <input
+                    bind:this={searchInput}
                     type="text"
-                    placeholder="Search (e.g. 'rev 3 16')"
+                    placeholder="Search (e.g. 'AMP John 3 16')"
                     bind:value={smartQuery}
                     onkeydown={handleSmartInputKeydown}
                     disabled={!bibleState.selectedVersion}
@@ -493,7 +558,6 @@
                         use:lazyLoadVerse={verse.id}
                         onmouseenter={() => {
                             hoveredVerseId = verse.id;
-                            // Backup trigger: If they hover fast and it hasn't loaded, fetch it
                             if (
                                 verse.text === null &&
                                 !fetchingVerses.has(verse.id)

@@ -108,6 +108,7 @@ pub fn run() {
             commands::network::get_local_ip,
             commands::lyrics::search_genius,
             commands::lyrics::scrape_genius_lyrics,
+            commands::media::bulk_copy_media,
             broadcast_payload,
             get_bible_versions,
             get_bible_books,

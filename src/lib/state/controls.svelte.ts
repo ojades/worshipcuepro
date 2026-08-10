@@ -30,6 +30,7 @@ export class ControlsState {
   showSpeakerTimerOnStage = $state(true);
   showSpeakerTimerOnProjector = $state(false);
   isSpeakerTimerRunning = $derived(this.speakerTargetTimestamp !== null);
+  speakerTotalDurationMs = $state(0);
 
   constructor() {
     this.initSyncListener();

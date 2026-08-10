@@ -361,21 +361,33 @@ class BibleState {
   async importXmlBible(xmlString: string, customAbbreviation?: string) {
     console.log("[System Bible] Parsing XML...");
 
-    // 1. Parse the XML string into a DOM Document
+    let sanitizedXml = xmlString.replace(/^\uFEFF/, "").trim();
+
+    const firstBracket = sanitizedXml.indexOf("<");
+    if (firstBracket > 0) {
+      sanitizedXml = sanitizedXml.substring(firstBracket);
+    }
+
+    sanitizedXml = sanitizedXml
+      .replace(/&(?!#?[a-zA-Z0-9]+;)/g, "&amp;")
+
+      .replace(/[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\u10000-\u10FFFF]/g, "");
+
     const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlString, "application/xml");
+    const doc = parser.parseFromString(sanitizedXml, "application/xml");
 
     const parseError = doc.querySelector("parsererror");
     if (parseError) {
-      throw new Error("Failed to parse XML file. Invalid format.");
+      console.error("[System Bible] XML Parse Error:", parseError.textContent);
+      throw new Error(
+        `Failed to parse XML file. Reason: ${parseError.textContent}`,
+      );
     }
 
-    // 2. Extract Translation Info
     const bibleNode = doc.querySelector("bible");
     const translationName =
       bibleNode?.getAttribute("translation") || "Unknown XML Bible";
 
-    // Auto-generate an abbreviation if none is provided (e.g., "English Amplified Classic" -> "EAC")
     const abbreviation =
       customAbbreviation ||
       translationName
@@ -389,7 +401,6 @@ class BibleState {
 
     const jsonData: any[] = [];
 
-    // 3. Traverse the XML nodes: Book -> Chapter -> Verse
     const books = doc.querySelectorAll("book");
 
     books.forEach((bookNode) => {
@@ -413,7 +424,6 @@ class BibleState {
           const verseNum = parseInt(verseNumStr, 10);
           const text = verseNode.textContent?.trim();
 
-          // Push to the flat array format expected by `importSystemBible`
           if (text) {
             jsonData.push({
               version: abbreviation,
@@ -437,7 +447,6 @@ class BibleState {
       `[System Bible] XML parsed. Found ${jsonData.length} verses. Routing to DB Importer...`,
     );
 
-    // 4. Pass the mapped data to the existing highly-optimized DB importer
     await this.importSystemBible(jsonData);
   }
 
@@ -458,6 +467,64 @@ class BibleState {
       if (verseNum) {
         this.pendingScrollVerse = verseNum.toString();
       }
+    }
+  }
+
+  async deleteSystemBible(prefixedId: string) {
+    if (!prefixedId.startsWith("sys_")) return;
+
+    console.log(`[System Bible] Deleting translation ${prefixedId}...`);
+    this.isLoading = true;
+
+    try {
+      const db = getDB();
+
+      // 1. Delete all cached books, chapters, verses, and the import flag from SQLite
+      // We use SQL LIKE operators to match all the dynamically generated cache keys for this translation
+      await db.execute(
+        `DELETE FROM bible_cache WHERE
+             cache_key = $1 OR
+             cache_key = $2 OR
+             cache_key LIKE $3 OR
+             cache_key LIKE $4`,
+        [
+          `imported_${prefixedId}`,
+          `books_${prefixedId}`,
+          `chapters_${prefixedId}_%`,
+          `verses_${prefixedId}_%`,
+        ],
+      );
+
+      // 2. Remove it from the registered system versions array
+      const systemVersions =
+        (await this.cacheDB.get<UnifiedBible[]>("system_bible_versions")) || [];
+      const updatedSystemVersions = systemVersions.filter(
+        (v) => v.id !== prefixedId,
+      );
+      await this.cacheDB.set(
+        "system_bible_versions",
+        updatedSystemVersions,
+        10 * 365 * 24 * 60 * 60 * 1000,
+      );
+
+      // 3. Clear the unified memory and DB cache so the UI updates
+      await this.cacheDB.delete("unified_bible_versions");
+
+      // 4. Deselect if it's currently active
+      if (this.selectedVersion === prefixedId) {
+        this.selectedVersion = null;
+        this.selectedBook = null;
+        this.selectedChapter = null;
+        this.verses = [];
+      }
+
+      // 5. Force a full reload to reflect the deleted state
+      await this.refreshVersions();
+      console.log(`[System Bible] ${prefixedId} successfully deleted.`);
+    } catch (err) {
+      console.error("[System Bible] Failed to delete translation:", err);
+    } finally {
+      this.isLoading = false;
     }
   }
 

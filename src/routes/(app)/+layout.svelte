@@ -6,10 +6,10 @@
     import Alert from "$lib/components/layout/Alert.svelte";
     import { invoke } from "@tauri-apps/api/core";
     import { emit } from "@tauri-apps/api/event";
-    import NKJV from "$lib/data/bibles/NKJV.json";
     import NIV from "$lib/data/bibles/NIV.json";
     import ERV from "$lib/data/bibles/ERV.json";
     import AMPC from "$lib/data/bibles/AMPC.xml?raw";
+    import NKJV from "$lib/data/bibles/NKJV.xml?raw";
 
     import { songsState } from "$lib/state/songs.svelte";
     import { media } from "$lib/state/media.svelte";
@@ -43,7 +43,7 @@
     async function loadAppResources() {
         try {
             await updateStatus("Importing NKJV...");
-            await bibleState.importSystemBible(NKJV);
+            await bibleState.importXmlBible(NKJV, "NKJV");
 
             await updateStatus("Importing NIV...");
             await bibleState.importSystemBible(NIV);
