@@ -20,6 +20,10 @@
     import { exists } from "@tauri-apps/plugin-fs";
     import { dev } from "$app/environment";
     import { fontState } from "$lib/state/fonts.svelte";
+    import {
+        getCoreWorkspaceAPI,
+        setCoreWorkspaceAPI,
+    } from "$lib/commands/settings-db";
 
     let { children } = $props();
 
@@ -72,43 +76,60 @@
 
     onMount(async () => {
         try {
-            const savedWorkspace = settingsState.config
-                ?.workspacePath as string;
+            let needRestart = false;
+            // 1. Check Rust for the definitive Core Workspace path
+            let coreWorkspace = await getCoreWorkspaceAPI();
+
+            // 2. MIGRATION: If Rust has no workspace, but localStorage does, migrate it.
+            const legacyWorkspace = settingsState.config?.workspacePath;
+
+            if (!coreWorkspace && legacyWorkspace) {
+                console.log(
+                    "[Migration] Moving workspace path from localStorage to Rust Core Config...",
+                );
+                await setCoreWorkspaceAPI(legacyWorkspace);
+                coreWorkspace = legacyWorkspace;
+
+                const newSettings = { ...settingsState.config };
+                delete newSettings.workspacePath;
+                settingsState.update(newSettings);
+                needRestart = true;
+            }
+
             let dirExists = false;
 
-            // Safely check if the directory exists without halting the app on permission/empty errors
-            if (savedWorkspace) {
+            // Safely check if the directory exists
+            if (coreWorkspace) {
                 try {
-                    dirExists = await exists(savedWorkspace);
+                    dirExists = await exists(coreWorkspace);
                 } catch (fsError) {
-                    console.warn(
-                        "Workspace check failed (invalid path or missing permissions):",
-                        fsError,
-                    );
+                    console.warn("Workspace check failed:", fsError);
                     dirExists = false;
                 }
             }
 
-            if (savedWorkspace && dirExists) {
+            if (coreWorkspace && dirExists) {
                 await updateStatus("Connecting to Database...");
-                isDbReady = await initDB(savedWorkspace);
 
-                if (isDbReady) {
-                    await loadAppResources();
-                    setTimeout(async () => {
-                        try {
-                            await invoke("close_splashscreen");
-                        } catch (e) {
-                            console.error("Failed to close splash screen:", e);
-                        }
-                    }, 500);
-                } else {
-                    // If DB fails to init, force setup so they aren't stuck
-                    throw new Error("Database initialization returned false");
+                await loadAppResources();
+
+                if (needRestart) {
+                    await updateStatus(
+                        "Restart the App for changes to take effect...",
+                    );
+                    return;
                 }
+
+                setTimeout(async () => {
+                    try {
+                        await invoke("close_splashscreen");
+                    } catch (e) {
+                        console.error("Failed to close splash screen:", e);
+                    }
+                }, 500);
             } else {
+                // No workspace found in Rust OR legacy JS. Show setup.
                 needsSetup = true;
-                // Close splash screen immediately so user can see onboarding UI
                 setTimeout(async () => {
                     try {
                         await invoke("close_splashscreen");
@@ -119,26 +140,29 @@
             }
         } catch (fatalError) {
             console.error("Critical error during app startup:", fatalError);
-            // Emergency fallback to close splash screen so the user can at least see the UI/errors
             needsSetup = true;
             await invoke("close_splashscreen").catch(console.error);
         }
     });
 
     async function handleWorkspaceSelected(newPath: string) {
-        // Parse path and save
         const savePath = await settingsState.parseWorkspaceDir(newPath);
-        settingsState.update({ workspacePath: savePath });
 
-        // Hide setup screen immediately so the user sees the Svelte loading state
+        // 1. Save strictly to Rust Core Config
+        await setCoreWorkspaceAPI(savePath);
+
         needsSetup = false;
-
         await updateStatus("Connecting to Database...");
-        isDbReady = await initDB(savePath);
 
-        if (isDbReady) {
-            await loadAppResources();
-        }
+        // Note: Because Rust initialized the DB *before* this path existed,
+        // you technically need to tell Rust to reconnect to the new path, or prompt a restart.
+        // For now, prompt restart is safest:
+        alert(
+            "Workspace set! Please restart WorshipCuePro to connect to the new database.",
+        );
+
+        // Or if you want to try loading resources immediately (assuming Rust auto-reconnected via a command):
+        // await loadAppResources();
     }
 </script>
 

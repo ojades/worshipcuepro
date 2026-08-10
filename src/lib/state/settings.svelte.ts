@@ -1,8 +1,8 @@
-// src/lib/state/settings.svelte.ts
+// /src/lib/state/settings.svelte.ts
 import { browser } from "$app/environment";
-import { getDB } from "$lib/db";
 import type { AppSettings, TextFormatConfig } from "$lib/types/models";
 import { mkdir } from "@tauri-apps/plugin-fs";
+import { getDbSettingAPI, setDbSettingAPI } from "$lib/commands/settings-db";
 
 const DEFAULT_FORMAT: TextFormatConfig = {
   fontFamily: "sans-serif",
@@ -18,7 +18,6 @@ const DEFAULT_FORMAT: TextFormatConfig = {
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  workspacePath: null,
   enabledBibles: [
     "ab_de4e12af7f28f599-01",
     "ab_d6e14a625393b4da-01",
@@ -79,26 +78,21 @@ class SettingsState {
     }
   }
 
-  // Update one or more settings at once
   update(updates: Partial<AppSettings>) {
     this.config = { ...this.config, ...updates };
     this.saveSettings();
   }
 
-  // --- NEW: Clear local cache while preserving workspace ---
   clearLocalCache() {
     if (!browser) return;
     const preservedWorkspace = this.config.workspacePath;
 
-    // Completely wipe localStorage
     localStorage.clear();
 
-    // Restore config to defaults but inject the preserved workspace
     this.config = { ...DEFAULT_SETTINGS, workspacePath: preservedWorkspace };
     this.saveSettings();
   }
 
-  // For future use: Exporting and Importing
   exportSettings(): string {
     const { workspacePath, ...settingsToExport } = this.config;
     return JSON.stringify(settingsToExport, null, 2);
@@ -107,7 +101,6 @@ class SettingsState {
   importSettings(jsonString: string): boolean {
     try {
       const parsed = JSON.parse(jsonString);
-
       const preservedWorkspace = this.config.workspacePath;
 
       this.config = {
@@ -141,12 +134,8 @@ class SettingsState {
    */
   async getDbSetting(key: string, defaultValue: string = ""): Promise<string> {
     try {
-      const db = getDB();
-      const res = await db.select<{ value: string }[]>(
-        "SELECT value FROM settings WHERE key = $1 LIMIT 1",
-        [key],
-      );
-      return res[0]?.value || defaultValue;
+      const res = await getDbSettingAPI(key);
+      return res ?? defaultValue;
     } catch (e) {
       console.error(`Failed to fetch DB setting for key: ${key}`, e);
       return defaultValue;
@@ -158,12 +147,7 @@ class SettingsState {
    */
   async setDbSetting(key: string, value: string): Promise<boolean> {
     try {
-      const db = getDB();
-      // Uses SQLite UPSERT: Inserts the new key, or updates the value if the key already exists
-      await db.execute(
-        "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [key, value],
-      );
+      await setDbSettingAPI(key, value);
       return true;
     } catch (e) {
       console.error(`Failed to save DB setting for key: ${key}`, e);

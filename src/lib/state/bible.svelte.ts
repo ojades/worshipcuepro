@@ -1,6 +1,13 @@
 // /src/lib/state/bible.svelte.ts
 import { bibleClient } from "$lib/api/bible-client";
 import { youversionClient } from "$lib/api/youversion-client";
+import {
+  clearBibleCacheAPI,
+  deleteBibleCacheAPI,
+  deleteSystemBibleCacheAPI,
+  getBibleCacheAPI,
+  setBibleCacheAPI,
+} from "$lib/commands/bible-db";
 import { getDB } from "$lib/db";
 import { settingsState } from "./settings.svelte";
 
@@ -477,23 +484,8 @@ class BibleState {
     this.isLoading = true;
 
     try {
-      const db = getDB();
-
-      // 1. Delete all cached books, chapters, verses, and the import flag from SQLite
-      // We use SQL LIKE operators to match all the dynamically generated cache keys for this translation
-      await db.execute(
-        `DELETE FROM bible_cache WHERE
-             cache_key = $1 OR
-             cache_key = $2 OR
-             cache_key LIKE $3 OR
-             cache_key LIKE $4`,
-        [
-          `imported_${prefixedId}`,
-          `books_${prefixedId}`,
-          `chapters_${prefixedId}_%`,
-          `verses_${prefixedId}_%`,
-        ],
-      );
+      // 1. Delete all cached books, chapters, verses, and the import flag (Handled by Rust)
+      await deleteSystemBibleCacheAPI(prefixedId);
 
       // 2. Remove it from the registered system versions array
       const systemVersions =
@@ -501,6 +493,7 @@ class BibleState {
       const updatedSystemVersions = systemVersions.filter(
         (v) => v.id !== prefixedId,
       );
+
       await this.cacheDB.set(
         "system_bible_versions",
         updatedSystemVersions,
@@ -906,51 +899,42 @@ class BibleState {
   private cacheDB = {
     get: async <T>(key: string): Promise<T | null> => {
       try {
-        const db = getDB();
-        const result = await db.select<{ data: string; timestamp: number }[]>(
-          "SELECT data, timestamp FROM bible_cache WHERE cache_key = $1",
-          [key],
-        );
+        const result = await getBibleCacheAPI(key);
 
-        if (result.length === 0) return null;
+        if (!result) return null;
 
-        const { data, timestamp } = result[0];
-
-        if (Date.now() - timestamp > CACHE_TTL_MS) {
+        if (Date.now() - result.timestamp > CACHE_TTL_MS) {
           await this.cacheDB.delete(key);
           return null;
         }
 
-        return JSON.parse(data) as T;
+        return JSON.parse(result.data) as T;
       } catch (err) {
         console.error(`[BibleCache] Error reading key: ${key}`, err);
         return null;
       }
     },
+
     set: async (key: string, payload: any, customTtlMs?: number) => {
       try {
-        const db = getDB();
         const timestamp = customTtlMs ? Date.now() + customTtlMs : Date.now();
-        await db.execute(
-          "INSERT OR REPLACE INTO bible_cache (cache_key, data, timestamp) VALUES ($1, $2, $3)",
-          [key, JSON.stringify(payload), timestamp],
-        );
+        await setBibleCacheAPI(key, JSON.stringify(payload), timestamp);
       } catch (err) {
         console.error(`[BibleCache] Error writing key: ${key}`, err);
       }
     },
+
     delete: async (key: string) => {
       try {
-        const db = getDB();
-        await db.execute("DELETE FROM bible_cache WHERE cache_key = $1", [key]);
+        await deleteBibleCacheAPI(key);
       } catch (err) {
         console.error(`[BibleCache] Error deleting key: ${key}`, err);
       }
     },
+
     clearAll: async () => {
       try {
-        const db = getDB();
-        await db.execute("DELETE FROM bible_cache");
+        await clearBibleCacheAPI();
       } catch (err) {
         console.error(`[BibleCache] Error clearing all cache`, err);
       }

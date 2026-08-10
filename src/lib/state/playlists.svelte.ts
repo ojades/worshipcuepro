@@ -1,50 +1,37 @@
-// src/lib/state/playlists.svelte.ts
-import { getDB } from "$lib/db";
+// /src/lib/state/playlists.svelte.ts
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { presentation } from "./presentation.svelte";
 import { shootState } from "./shoot.svelte";
 import { parseLyrics } from "$lib/utils/lyrics";
-import { settingsState } from "./settings.svelte";
-
-export interface PlaylistMeta {
-  id: string;
-  name: string;
-  created_at: string;
-  cueCount: number;
-}
+import {
+  fetchAllPlaylistsAPI,
+  createPlaylistAPI,
+  updatePlaylistAPI,
+  deletePlaylistAPI,
+  fetchPlaylistCuesAPI,
+  fetchPlaylistMetaAPI,
+  addCueToPlaylistAPI,
+  updatePlaylistSortOrderAPI,
+  removeCueFromPlaylistAPI,
+  type PlaylistMeta,
+} from "$lib/commands/playlist-db";
 
 export class PlaylistsState {
   allPlaylists = $state<PlaylistMeta[]>([]);
 
   // Fetch all playlists with their cue counts
   async loadAll() {
-    const db = getDB();
     try {
-      const result = await db.select<PlaylistMeta[]>(`
-        SELECT
-          p.id,
-          p.name,
-          p.created_at,
-          COUNT(pi.id) as cueCount
-        FROM playlists p
-        LEFT JOIN playlist_items pi ON p.id = pi.playlist_id
-        GROUP BY p.id
-        ORDER BY p.created_at DESC
-      `);
-      this.allPlaylists = result;
+      this.allPlaylists = await fetchAllPlaylistsAPI();
     } catch (error) {
       console.error("Failed to load playlists:", error);
     }
   }
 
   async create(title: string) {
-    const db = getDB();
     const id = crypto.randomUUID();
     try {
-      await db.execute("INSERT INTO playlists (id, name) VALUES ($1, $2)", [
-        id,
-        title,
-      ]);
+      await createPlaylistAPI(id, title);
       await this.loadAll();
     } catch (error) {
       console.error("Failed to create playlist:", error);
@@ -52,12 +39,8 @@ export class PlaylistsState {
   }
 
   async update(id: string, newTitle: string) {
-    const db = getDB();
     try {
-      await db.execute("UPDATE playlists SET name = $1 WHERE id = $2", [
-        newTitle,
-        id,
-      ]);
+      await updatePlaylistAPI(id, newTitle);
       await this.loadAll();
 
       // If the active playlist was renamed, update it in presentation state too
@@ -70,14 +53,8 @@ export class PlaylistsState {
   }
 
   async delete(id: string) {
-    const db = getDB();
     try {
-      // Delete items first, then the playlist sequentially
-      await db.execute("DELETE FROM playlist_items WHERE playlist_id = $1", [
-        id,
-      ]);
-      await db.execute("DELETE FROM playlists WHERE id = $1", [id]);
-
+      await deletePlaylistAPI(id);
       await this.loadAll();
 
       // Clear active view if we just deleted it
@@ -92,30 +69,12 @@ export class PlaylistsState {
   // --- PLAYLIST ITEMS MANAGEMENT ---
 
   async loadPlaylist(playlistId: string) {
-    const db = getDB();
     try {
-      const rawCues = await db.select<any[]>(
-        `SELECT
-               pi.id as playlist_item_id,
-               pi.sort_order,
-               pi.item_id as id,
-               pi.item_type as type,
-               COALESCE(s.title, m.filename, sh.title) as title,
-               s.raw_lyrics,
-               m.filepath,
-               m.type as media_type
-             FROM playlist_items pi
-             LEFT JOIN songs s ON pi.item_id = s.id AND pi.item_type = 'song'
-             LEFT JOIN media m ON pi.item_id = m.id AND pi.item_type = 'media'
-             LEFT JOIN shoots sh ON pi.item_id = sh.id AND pi.item_type = 'shoot' -- <-- Add Shoots Join
-             WHERE pi.playlist_id = $1
-             ORDER BY pi.sort_order ASC`,
-        [playlistId],
-      );
+      const rawCues = await fetchPlaylistCuesAPI(playlistId);
 
-      // Hydrate special cue types
+      // Hydrate special cue types (Requires frontend utilities like parseLyrics)
       const cues = await Promise.all(
-        rawCues.map(async (cue) => {
+        rawCues.map(async (cue: any) => {
           if (cue.type === "media" && cue.filepath) {
             cue.asset_url = convertFileSrc(cue.filepath);
           } else if (cue.type === "shoot") {
@@ -131,13 +90,10 @@ export class PlaylistsState {
         }),
       );
 
-      const playlistMeta = await db.select<PlaylistMeta[]>(
-        "SELECT id, name, created_at FROM playlists WHERE id = $1",
-        [playlistId],
-      );
+      const playlistMeta = await fetchPlaylistMetaAPI(playlistId);
 
-      if (playlistMeta.length > 0) {
-        presentation.activePlaylist = { ...playlistMeta[0], cues };
+      if (playlistMeta) {
+        presentation.activePlaylist = { ...playlistMeta, cues };
       }
     } catch (error) {
       console.error("Failed to load playlist cues:", error);
@@ -150,15 +106,11 @@ export class PlaylistsState {
     }
 
     // Auto-create a fallback "Live Session" if none exists
-    const db = getDB();
     const id = crypto.randomUUID();
     const title = `Live Session - ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 
     try {
-      await db.execute("INSERT INTO playlists (id, name) VALUES ($1, $2)", [
-        id,
-        title,
-      ]);
+      await createPlaylistAPI(id, title);
       await this.loadAll();
       await this.loadPlaylist(id);
       return id;
@@ -181,21 +133,9 @@ export class PlaylistsState {
     cueId: string,
     cueType: "song" | "media" | "shoot" = "song",
   ) {
-    const db = getDB();
-    const id = crypto.randomUUID();
+    const playlistItemId = crypto.randomUUID();
     try {
-      // Get the next sort_order based on current items
-      const rows = await db.select<{ count: number }[]>(
-        "SELECT COUNT(id) as count FROM playlist_items WHERE playlist_id = $1",
-        [playlistId],
-      );
-      const sortOrder = rows[0].count;
-
-      await db.execute(
-        `INSERT INTO playlist_items (id, playlist_id, item_id, item_type, sort_order)
-            VALUES ($1, $2, $3, $4, $5)`,
-        [id, playlistId, cueId, cueType, sortOrder],
-      );
+      await addCueToPlaylistAPI(playlistId, cueId, cueType, playlistItemId);
 
       // If we just added to the currently active playlist, refresh it immediately
       if (presentation.activePlaylist?.id === playlistId) {
@@ -212,17 +152,17 @@ export class PlaylistsState {
   async updateSortOrder(newCuesArray: any[]) {
     if (!presentation.activePlaylist) return;
 
+    // Optimistically update UI
     presentation.activePlaylist.cues = newCuesArray;
-    const db = getDB();
 
     try {
-      // Execute sequentially without spanning a manual transaction across async calls
-      for (let i = 0; i < newCuesArray.length; i++) {
-        await db.execute(
-          "UPDATE playlist_items SET sort_order = $1 WHERE id = $2",
-          [i, newCuesArray[i].playlist_item_id],
-        );
-      }
+      const updates = newCuesArray.map((cue, index) => ({
+        playlist_item_id: cue.playlist_item_id,
+        sort_order: index,
+      }));
+
+      // Executes inside a fast Rust transaction
+      await updatePlaylistSortOrderAPI(updates);
     } catch (error) {
       console.error("Failed to save new playlist order:", error);
       await this.loadPlaylist(presentation.activePlaylist.id); // Revert UI on fail
@@ -230,11 +170,8 @@ export class PlaylistsState {
   }
 
   async removeCueFromPlaylist(playlistItemId: string, playlistId: string) {
-    const db = getDB();
     try {
-      await db.execute("DELETE FROM playlist_items WHERE id = $1", [
-        playlistItemId,
-      ]);
+      await removeCueFromPlaylistAPI(playlistItemId);
 
       if (presentation.activePlaylist?.id === playlistId) {
         await this.loadPlaylist(playlistId);

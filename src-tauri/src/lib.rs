@@ -1,3 +1,4 @@
+// src-tauri/src/lib.rs
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -5,6 +6,7 @@ use tauri::Manager;
 use tokio::sync::{broadcast, RwLock};
 
 pub mod commands;
+pub mod db;
 pub mod obs;
 
 use commands::api_bible::{
@@ -75,6 +77,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            let db_pool = db::init_db(&app.handle()).unwrap();
+            app.manage(db_pool);
             // Create a broadcast channel with a capacity of 100 messages
             let (tx, _rx) = broadcast::channel(100);
 
@@ -108,7 +112,41 @@ pub fn run() {
             commands::network::get_local_ip,
             commands::lyrics::search_genius,
             commands::lyrics::scrape_genius_lyrics,
-            commands::media::bulk_copy_media,
+            commands::db::media::bulk_copy_media,
+            commands::db::song::fetch_all_songs,
+            commands::db::song::sync_checkpoint,
+            commands::db::song::insert_song,
+            commands::db::song::update_song,
+            commands::db::song::delete_song,
+            commands::db::bible::get_bible_cache,
+            commands::db::bible::set_bible_cache,
+            commands::db::bible::clear_bible_cache,
+            commands::db::bible::delete_system_bible_cache,
+            commands::db::bible::delete_bible_cache,
+            commands::db::media::fetch_all_media,
+            commands::db::media::update_category_by_name,
+            commands::db::media::update_media_thumbnail,
+            commands::db::media::bulk_insert_media,
+            commands::db::media::bulk_update_media_category,
+            commands::db::media::fetch_media_paths,
+            commands::db::media::bulk_delete_media,
+            commands::db::playlist::fetch_all_playlists,
+            commands::db::playlist::create_playlist,
+            commands::db::playlist::update_playlist,
+            commands::db::playlist::delete_playlist,
+            commands::db::playlist::fetch_playlist_cues,
+            commands::db::playlist::fetch_playlist_meta,
+            commands::db::playlist::add_cue_to_playlist,
+            commands::db::playlist::update_playlist_sort_order,
+            commands::db::playlist::remove_cue_from_playlist,
+            commands::db::settings::get_db_setting,
+            commands::db::settings::set_db_setting,
+            commands::db::settings::set_core_workspace,
+            commands::db::settings::get_core_workspace,
+            commands::db::shoot::fetch_shoot_slides,
+            commands::db::shoot::save_shoot,
+            commands::db::shoot::delete_shoot,
+            commands::db::shoot::fetch_shoot,
             broadcast_payload,
             get_bible_versions,
             get_bible_books,

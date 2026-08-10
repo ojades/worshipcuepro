@@ -1,10 +1,19 @@
-// src/lib/state/media.svelte.ts
+// /src/lib/state/media.svelte.ts
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { mkdir, exists, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
-import { getDB } from "$lib/db";
 import { settingsState } from "$lib/state/settings.svelte";
+import {
+  fetchAllMediaAPI,
+  updateCategoryByNameAPI,
+  updateMediaThumbnailAPI,
+  bulkInsertMediaAPI,
+  bulkUpdateMediaCategoryAPI,
+  fetchMediaPathsAPI,
+  bulkDeleteMediaAPI,
+  type MediaInsert,
+} from "$lib/commands/media-db";
 
 export interface Media {
   id: string;
@@ -26,7 +35,6 @@ export const DEFAULT_CATEGORIES = [
   "Logos",
 ];
 
-// Helper to convert Base64 Data URL to raw bytes for saving to disk
 function base64ToUint8Array(base64DataUrl: string) {
   const base64 = base64DataUrl.split(",")[1];
   const raw = atob(base64);
@@ -43,7 +51,6 @@ class MediaState {
   isImporting = $state(false);
   private _isProcessingThumbs = false;
 
-  // --- NEW: Persistent Custom Categories ---
   savedCategories = $state<string[]>([]);
 
   categories = $derived.by(() => {
@@ -52,10 +59,6 @@ class MediaState {
       new Set(["Uncategorized", ...this.savedCategories, ...usedCategories]),
     ).sort();
   });
-
-  async initDb() {
-    return getDB();
-  }
 
   async loadCategories() {
     const stored = await settingsState.getDbSetting("media_categories", "");
@@ -86,7 +89,6 @@ class MediaState {
     const trimmed = newName.trim();
     if (!trimmed || oldName === "Uncategorized" || oldName === trimmed) return;
 
-    // Update the categories list
     const index = this.savedCategories.indexOf(oldName);
     if (index !== -1) {
       this.savedCategories[index] = trimmed;
@@ -95,12 +97,7 @@ class MediaState {
     }
     await this.saveCategories();
 
-    // Update all media items attached to the old name
-    const db = await this.initDb();
-    await db.execute("UPDATE media SET category = $1 WHERE category = $2", [
-      trimmed,
-      oldName,
-    ]);
+    await updateCategoryByNameAPI(oldName, trimmed);
     await this.loadAll();
   }
 
@@ -108,16 +105,12 @@ class MediaState {
     name: string,
     fallbackCategory: string = "Uncategorized",
   ) {
-    if (name === "Uncategorized") return; // Protect default
+    if (name === "Uncategorized") return;
 
     this.savedCategories = this.savedCategories.filter((c) => c !== name);
     await this.saveCategories();
 
-    const db = await this.initDb();
-    await db.execute("UPDATE media SET category = $1 WHERE category = $2", [
-      fallbackCategory,
-      name,
-    ]);
+    await updateCategoryByNameAPI(name, fallbackCategory);
     await this.loadAll();
   }
 
@@ -126,10 +119,7 @@ class MediaState {
       await this.loadCategories();
     }
 
-    const db = await this.initDb();
-    const results = await db.select<Media[]>(
-      "SELECT * FROM media ORDER BY created_at DESC",
-    );
+    const results = await fetchAllMediaAPI();
 
     const workspace = settingsState.config.workspacePath;
     let mediaDirPath = workspace ? await join(workspace, "media") : "";
@@ -169,7 +159,6 @@ class MediaState {
     this.processMissingThumbnails();
   }
 
-  // --- BACKGROUND THUMBNAIL WORKER ---
   private async processMissingThumbnails() {
     if (this._isProcessingThumbs) return;
     this._isProcessingThumbs = true;
@@ -202,11 +191,7 @@ class MediaState {
           const absoluteThumbPath = await join(thumbsDirPath, thumbFileName);
           await writeFile(absoluteThumbPath, bytes);
 
-          const db = await this.initDb();
-          await db.execute(
-            "UPDATE media SET thumbnail_path = $1 WHERE id = $2",
-            [thumbFileName, mediaItem.id],
-          );
+          await updateMediaThumbnailAPI(mediaItem.id, thumbFileName);
 
           const index = this.allMedia.findIndex((m) => m.id === mediaItem.id);
           if (index !== -1) {
@@ -257,12 +242,10 @@ class MediaState {
           video.remove();
         }
       };
-
       video.onerror = (e) => reject(e);
     });
   }
 
-  // --- IMPORT MEDIA ---
   async importMedia(targetCategory: string = "Uncategorized") {
     const selected = await open({
       multiple: true,
@@ -288,7 +271,6 @@ class MediaState {
     if (files.length === 0) return;
 
     this.isImporting = true;
-    const db = await this.initDb();
     const workspace = settingsState.config.workspacePath;
     let mediaDirPath = "";
 
@@ -299,8 +281,7 @@ class MediaState {
     }
 
     const fileCopyJobs: [string, string][] = [];
-    const dbValues: any[][] = [];
-    let placeholders: string[] = [];
+    const mediaToInsert: MediaInsert[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -328,11 +309,13 @@ class MediaState {
         dbFilePath = targetFileName;
       }
 
-      const id = crypto.randomUUID();
-      dbValues.push([id, name, dbFilePath, mediaType, targetCategory]);
-      placeholders.push(
-        `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`,
-      );
+      mediaToInsert.push({
+        id: crypto.randomUUID(),
+        filename: name,
+        filepath: dbFilePath,
+        type: mediaType,
+        category: targetCategory,
+      });
     }
 
     if (fileCopyJobs.length > 0) {
@@ -343,9 +326,8 @@ class MediaState {
       }
     }
 
-    if (dbValues.length > 0) {
-      const query = `INSERT INTO media (id, filename, filepath, type, category) VALUES ${placeholders.join(", ")}`;
-      await db.execute(query, dbValues.flat());
+    if (mediaToInsert.length > 0) {
+      await bulkInsertMediaAPI(mediaToInsert);
     }
 
     await this.loadAll();
@@ -354,33 +336,26 @@ class MediaState {
 
   async updateCategories(ids: string[], newCategory: string) {
     if (ids.length === 0) return;
-    const db = await this.initDb();
-    const placeholders = ids.map((_, i) => `$${i + 2}`).join(", ");
-    await db.execute(
-      `UPDATE media SET category = $1 WHERE id IN (${placeholders})`,
-      [newCategory, ...ids],
-    );
+    await bulkUpdateMediaCategoryAPI(ids, newCategory);
     await this.loadAll();
   }
 
   async bulkDelete(ids: string[]) {
     if (ids.length === 0) return;
-    const db = await this.initDb();
 
-    const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
-    const results = await db.select<Media[]>(
-      `SELECT filepath, thumbnail_path FROM media WHERE id IN (${placeholders})`,
-      ids,
-    );
+    // 1. Fetch paths first so we know what to delete from disk
+    const paths = await fetchMediaPathsAPI(ids);
 
-    await db.execute(`DELETE FROM media WHERE id IN (${placeholders})`, ids);
+    // 2. Delete from DB inside a fast Rust transaction
+    await bulkDeleteMediaAPI(ids);
 
+    // 3. Cleanup local files
     const workspace = settingsState.config.workspacePath;
     if (workspace) {
       const mediaDir = await join(workspace, "media");
       const thumbDir = await join(mediaDir, "thumbnails");
 
-      for (const item of results) {
+      for (const item of paths) {
         let filepath = item.filepath;
         if (!filepath.includes("/") && !filepath.includes("\\")) {
           filepath = await join(mediaDir, filepath);

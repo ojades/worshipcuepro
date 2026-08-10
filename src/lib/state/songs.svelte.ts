@@ -1,15 +1,19 @@
-// src/lib/state/songs.svelte.ts
-import { getDB } from "$lib/db";
+// /src/lib/state/songs.svelte.ts
 import { systemState } from "$lib/state/system.svelte";
 import type { SongCue } from "$lib/types/models";
+import {
+  fetchAllSongs,
+  insertSongAPI,
+  updateSongAPI,
+  deleteSongAPI,
+} from "$lib/commands/song-db";
 
 class SongsState {
   songs = $state<SongCue[]>([]);
 
   async load() {
     try {
-      const db = getDB();
-      this.songs = await db.select("SELECT * FROM songs ORDER BY title ASC");
+      this.songs = await fetchAllSongs();
     } catch (e) {
       console.error("Failed to load songs:", e);
       systemState.addAlert({
@@ -25,13 +29,15 @@ class SongsState {
     raw_lyrics: string;
   }) {
     try {
-      const db = getDB();
       const id = crypto.randomUUID();
 
-      await db.execute(
-        "INSERT INTO songs (id, title, artist, lines_per_slide, raw_lyrics) VALUES ($1, $2, $3, $4, $5)",
-        [id, data.title, data.artist, 0, data.raw_lyrics],
-      );
+      await insertSongAPI({
+        id,
+        title: data.title,
+        artist: data.artist,
+        lines_per_slide: 0,
+        raw_lyrics: data.raw_lyrics,
+      });
 
       await this.load();
       systemState.addAlert({
@@ -51,16 +57,15 @@ class SongsState {
 
   async create() {
     try {
-      const db = getDB();
       const id = crypto.randomUUID();
-      const defaultTitle = "New Song";
-      const defaultArtist = "";
-      const defaultLyrics = "Verse 1\n\nType your lyrics here...";
 
-      await db.execute(
-        "INSERT INTO songs (id, title, artist, lines_per_slide, raw_lyrics) VALUES ($1, $2, $3, $4, $5)",
-        [id, defaultTitle, defaultArtist, 0, defaultLyrics],
-      );
+      await insertSongAPI({
+        id,
+        title: "New Song",
+        artist: "",
+        lines_per_slide: 0,
+        raw_lyrics: "Verse 1\n\nType your lyrics here...",
+      });
 
       await this.load();
       systemState.addAlert({ message: "New song created.", type: "success" });
@@ -76,11 +81,14 @@ class SongsState {
 
   async update(id: string, data: any) {
     try {
-      const db = getDB();
-      await db.execute(
-        "UPDATE songs SET title = $1, artist = $2, lines_per_slide = $3, raw_lyrics = $4 WHERE id = $5",
-        [data.title, data.artist, data.lines_per_slide, data.raw_lyrics, id],
-      );
+      await updateSongAPI({
+        id,
+        title: data.title,
+        artist: data.artist || "",
+        lines_per_slide: data.lines_per_slide || 0,
+        raw_lyrics: data.raw_lyrics || "",
+      });
+
       await this.load();
       systemState.addAlert({
         message: "Song saved successfully.",
@@ -93,9 +101,7 @@ class SongsState {
 
   async delete(id: string) {
     try {
-      const db = getDB();
-      await db.execute("DELETE FROM songs WHERE id = $1", [id]);
-
+      await deleteSongAPI(id);
       await this.load();
       systemState.addAlert({
         message: "Song deleted successfully.",

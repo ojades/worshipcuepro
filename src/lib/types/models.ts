@@ -70,7 +70,7 @@ export interface DisplayConfig {
 }
 
 export interface AppSettings {
-  workspacePath: string | null;
+  workspacePath?: string | null;
   enabledBibles: string[];
   linesPerSlide?: number;
   projector?: DisplayConfig;
