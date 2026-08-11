@@ -979,7 +979,7 @@ class BibleState {
           slides: chunks.map((chunkText, i) => ({
             id: `slide_${v.id}_${i}`,
             text: chunkText,
-            reference: `${v.reference} (${versionAbbr})${chunks.length > 1 ? ` [${i + 1}/${chunks.length}]` : ""}`,
+            reference: `${v.reference} (${versionAbbr})`,
             verseId: v.id,
           })),
         };
@@ -998,10 +998,6 @@ class BibleState {
     const versionAbbr = version?.abbreviation || version?.name || "Bible";
     const book = this.books.find((b) => b.id === this.selectedBook);
     const chapter = this.chapters.find((c) => c.id === this.selectedChapter);
-
-    // REMOVE the massive Promise.all here! It caused rate limiting on YouVersion.
-    // Let the lazy loader handle the fetching!
-
     const linesPerSlide = (settingsState.config as any).linesPerSlide || 0;
     const currentFontScale = settingsState.config.projector?.textScale ?? 1.0;
 
@@ -1019,7 +1015,7 @@ class BibleState {
           slides: chunks.map((chunkText: string, i: number, arr: string[]) => ({
             id: `slide_${v.id}_${i}`,
             text: chunkText,
-            reference: `${v.reference} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
+            reference: `${v.reference} (${versionAbbr})`,
             verseId: v.id,
           })),
         };

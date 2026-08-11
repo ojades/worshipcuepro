@@ -130,20 +130,20 @@
                 {:else}
                     <!-- Fallback Default UI -->
                     <div
-                        class="bg-zinc-900/90 backdrop-blur-md border-l-4 border-violet-500 rounded-r-2xl shadow-2xl p-6"
+                        class="bg-zinc-900/90 backdrop-blur-md border-l-4 border-violet-500 rounded-r-2xl shadow-2xl p-6 wcp-bible-cont"
                     >
                         <p
-                            class="text-white text-5xl font-serif leading-tight drop-shadow-md whitespace-pre-wrap"
+                            class="text-white text-3xl font-serif leading-tight drop-shadow-md whitespace-pre-wrap wcp-bible-text"
                         >
                             {activeCue.text}
                         </p>
                     </div>
-                    <div class="w-full flex justify-end">
+                    <div class="w-full flex justify-end wcp-bible-ref">
                         <div
-                            class="bg-violet-600/95 backdrop-blur-md self-start rounded-b-xl rounded-tr-xl px-6 py-2 ml-4 shadow-xl"
+                            class="bg-violet-600/95 backdrop-blur-md self-start rounded-b-xl rounded-tr-xl px-6 py-2 ml-4 shadow-xl wcp-bible-ref-cont"
                         >
                             <p
-                                class="text-violet-50 text-xl font-bold tracking-wide uppercase"
+                                class="text-violet-50 text-xl font-bold tracking-wide uppercase wcp-bible-ref-text"
                             >
                                 {activeCue.subText}
                             </p>
@@ -162,16 +162,16 @@
                     )}
                 {:else}
                     <!-- Fallback Default UI -->
-                    <div class="text-center w-full">
+                    <div class="text-center w-full wcp-lyric-cont">
                         <p
-                            class="text-white text-5xl font-bold drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] whitespace-pre-wrap"
+                            class="text-white text-5xl font-bold drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] whitespace-pre-wrap wcp-lyric-text"
                             style="-webkit-text-stroke: 1px rgba(0,0,0,0.5);"
                         >
                             {activeCue.text}
                         </p>
                         {#if activeCue.subText}
                             <p
-                                class="text-zinc-200 text-3xl font-medium mt-2 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]"
+                                class="text-zinc-200 text-3xl font-medium mt-2 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] wcp-lyric-subtext"
                             >
                                 {activeCue.subText}
                             </p>
