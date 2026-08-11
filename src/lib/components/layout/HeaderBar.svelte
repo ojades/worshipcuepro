@@ -1,6 +1,6 @@
 <!-- src/lib/components/layout/HeaderBar.svelte -->
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, onDestroy } from "svelte";
     import { systemState } from "$lib/state/system.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
     import {
@@ -20,27 +20,97 @@
         Tv,
         MonitorX,
     } from "@lucide/svelte";
-    import { settingsState } from "$lib/state/settings.svelte";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
 
     let isDisplayMenuOpen = $state(false);
     let { title } = $props<{ title: string }>();
 
-    // Refresh displays on mount
-    onMount(async () => {
-        try {
-            const hardwareDisplays = await fetchSystemDisplays();
-            systemState.setDisplays(hardwareDisplays);
-        } catch (err) {
-            systemState.addAlert({
-                message: "Failed to scan system displays.",
-                type: "error",
-                timeout: 4000,
-            });
-        }
+    // Polling State
+    let displayPollInterval: ReturnType<typeof setInterval>;
+    let previousDisplayCount = $state(0);
+    let hasInitializedDisplays = $state(false);
+
+    onMount(() => {
+        // --- DYNAMIC DISPLAY POLLING & AUTO-CONNECT ---
+        const pollDisplays = async () => {
+            try {
+                const hardwareDisplays = await fetchSystemDisplays();
+
+                // Detect if a new monitor was just plugged in (or if we booted with one)
+                const isInitialBootWithExternal =
+                    !hasInitializedDisplays && hardwareDisplays.length > 1;
+                // Use < instead of === 1 so it seamlessly handles 1->2, 2->3, etc.
+                const isNewlyAttached =
+                    hasInitializedDisplays &&
+                    previousDisplayCount < hardwareDisplays.length;
+
+                // This handles the smart auto-assignment via SystemState
+                systemState.setDisplays(hardwareDisplays);
+
+                // --- CLEANUP ORPHANED WINDOWS ---
+                // If a display dropped, Tauri moves the window to the primary screen.
+                // We MUST explicitly close it so it doesn't block the operator's view.
+                if (
+                    systemState.isProjectorOpen &&
+                    !systemState.projectorMonitor
+                ) {
+                    await closeProjectorWindow().catch(() => {});
+                    systemState.isProjectorOpen = false;
+                }
+                if (systemState.isStageOpen && !systemState.stageMonitor) {
+                    await closeStageWindow().catch(() => {});
+                    systemState.isStageOpen = false;
+                }
+
+                // --- AUTO-LAUNCH PROJECTOR ---
+                if (
+                    (isInitialBootWithExternal || isNewlyAttached) &&
+                    !systemState.isProjectorOpen &&
+                    systemState.projectorMonitor
+                ) {
+                    try {
+                        // Force close just in case a ghost window from a previous session exists
+                        await closeProjectorWindow().catch(() => {});
+
+                        await launchProjectorWindow(
+                            systemState.projectorMonitor,
+                        );
+                        systemState.isProjectorOpen = true;
+
+                        systemState.addAlert({
+                            message: `Projector auto-connected to external display.`,
+                            type: "success",
+                            timeout: 3000,
+                        });
+                    } catch (launchErr) {
+                        console.error("Auto-launch failed:", launchErr);
+                    }
+                }
+
+                previousDisplayCount = hardwareDisplays.length;
+                hasInitializedDisplays = true;
+            } catch (err) {
+                // Silently catch polling errors so we don't spam the UI if Tauri hiccups
+                console.error("Display poll error:", err);
+            }
+        };
+
+        // Run immediately, then every 3 seconds
+        pollDisplays();
+        displayPollInterval = setInterval(pollDisplays, 3000);
+
+        // Menu Toggle Event
+        const toggleMenu = () => {
+            isDisplayMenuOpen = !isDisplayMenuOpen;
+        };
+        window.addEventListener("toggle-display-menu", toggleMenu);
+
+        return () => {
+            clearInterval(displayPollInterval);
+            window.removeEventListener("toggle-display-menu", toggleMenu);
+        };
     });
 
-    // ... handleProjectorToggle and handleStageToggle remain exactly the same ...
     async function handleProjectorToggle() {
         try {
             if (systemState.isProjectorOpen) {
@@ -56,6 +126,10 @@
                     });
                     return;
                 }
+
+                // Destroy any lingering ghost windows before launching
+                await closeProjectorWindow().catch(() => {});
+
                 await launchProjectorWindow(systemState.projectorMonitor);
                 systemState.isProjectorOpen = true;
             }
@@ -79,6 +153,10 @@
                     });
                     return;
                 }
+
+                // Destroy any lingering ghost windows before launching
+                await closeStageWindow().catch(() => {});
+
                 await launchStageWindow(systemState.stageMonitor);
                 systemState.isStageOpen = true;
             }
@@ -86,26 +164,12 @@
             systemState.addAlert({ message: String(err), type: "error" });
         }
     }
-
-    function updateAlignment(alignment: "top" | "middle" | "bottom") {
-        settingsState.update({ projectorAlignment: alignment });
-        presentation.broadcastState();
-    }
-
-    onMount(() => {
-        const toggleMenu = () => {
-            isDisplayMenuOpen = !isDisplayMenuOpen;
-        };
-        window.addEventListener("toggle-display-menu", toggleMenu);
-        return () =>
-            window.removeEventListener("toggle-display-menu", toggleMenu);
-    });
 </script>
 
 <header
     class="h-14 border-b border-border bg-card/40 backdrop-blur-md px-6 flex items-center justify-between z-50 relative"
 >
-    <!-- ... Left side titles remain the same ... -->
+    <!-- KEEP ALL HTML EXACTLY AS IT WAS -->
     <div class="flex flex-col">
         <h1
             class="text-sm font-bold tracking-tight text-foreground/90 uppercase flex items-center gap-2"
@@ -178,6 +242,8 @@
             <!-- Dropdown Menu -->
             {#if isDisplayMenuOpen}
                 <!-- Invisible backdrop to close menu when clicking outside -->
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div
                     class="fixed inset-0 z-40 h-screen"
                     onclick={() => (isDisplayMenuOpen = false)}
@@ -187,51 +253,6 @@
                 <div
                     class="absolute right-0 top-full mt-3 w-80 bg-card border border-border rounded-xl shadow-2xl p-5 space-y-5 z-[60]"
                 >
-                    <div>
-                        <h2
-                            class="text-xs font-bold tracking-wider text-muted-foreground uppercase pb-2 border-b border-border mb-3"
-                        >
-                            Projector Output
-                        </h2>
-                        <div class="flex items-center justify-between">
-                            <span class="text-sm font-medium text-foreground"
-                                >Text Alignment</span
-                            >
-                            <!-- Segmented Control for Alignment -->
-                            <div
-                                class="flex bg-background border border-border rounded-lg p-0.5 shadow-inner"
-                            >
-                                <button
-                                    onclick={() => updateAlignment("top")}
-                                    class="px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-200 {settingsState
-                                        .config.projectorAlignment === 'top'
-                                        ? 'bg-zinc-800 text-foreground shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground'}"
-                                >
-                                    Top
-                                </button>
-                                <button
-                                    onclick={() => updateAlignment("middle")}
-                                    class="px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-200 {settingsState
-                                        .config.projectorAlignment === 'middle'
-                                        ? 'bg-zinc-800 text-foreground shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground'}"
-                                >
-                                    Middle
-                                </button>
-                                <button
-                                    onclick={() => updateAlignment("bottom")}
-                                    class="px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-200 {settingsState
-                                        .config.projectorAlignment === 'bottom'
-                                        ? 'bg-zinc-800 text-foreground shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground'}"
-                                >
-                                    Bottom
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- External Displays Settings -->
                     <div>
                         <h2

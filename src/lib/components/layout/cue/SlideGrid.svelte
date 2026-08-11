@@ -4,6 +4,9 @@
     import { X, Save, Image as ImageIcon, Video } from "@lucide/svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
+    import { bibleState } from "$lib/state/bible.svelte";
+    import { settingsState } from "$lib/state/settings.svelte";
+    import { chunkProse } from "$lib/utils/helper";
 
     let {
         isQuickEditing = $bindable(false),
@@ -18,6 +21,86 @@
     }>();
 
     let scrollContainer: HTMLDivElement | null = $state(null);
+
+    const fetchingSlides = new Set<string>();
+
+    function lazyLoadSlide(
+        node: HTMLElement,
+        { verseId, text }: { verseId?: string; text: string },
+    ) {
+        if (!verseId || text !== "(Loading...)") return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && !fetchingSlides.has(verseId)) {
+                    fetchingSlides.add(verseId);
+
+                    bibleState
+                        .resolveVerseText(verseId)
+                        .then((newText) => {
+                            if (newText && presentation.activeCue) {
+                                const linesPerSlide =
+                                    (settingsState.config as any)
+                                        .linesPerSlide || 0;
+                                const currentFontScale =
+                                    settingsState.config.projector?.textScale ??
+                                    1.0;
+                                const versionAbbr =
+                                    bibleState.versions.find(
+                                        (v) =>
+                                            v.id === bibleState.selectedVersion,
+                                    )?.abbreviation || "Bible";
+
+                                const newChunks = chunkProse(
+                                    newText,
+                                    linesPerSlide,
+                                    currentFontScale,
+                                );
+
+                                const sectionIndex =
+                                    presentation.activeCue.sections.findIndex(
+                                        (s: any) => s.id === `verse_${verseId}`,
+                                    );
+
+                                if (sectionIndex !== -1) {
+                                    const updatedSlides = newChunks.map(
+                                        (chunkText, i, arr) => ({
+                                            id: `slide_${verseId}_${i}`,
+                                            text: chunkText,
+                                            reference: `${presentation.activeCue!.sections[sectionIndex].title} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
+                                            verseId: verseId,
+                                        }),
+                                    );
+
+                                    // Force Svelte reactivity by cloning the array
+                                    const newSections = [
+                                        ...presentation.activeCue.sections,
+                                    ];
+                                    newSections[sectionIndex] = {
+                                        ...newSections[sectionIndex],
+                                        slides: updatedSlides,
+                                    };
+
+                                    presentation.activeCue.sections =
+                                        newSections;
+                                }
+                            }
+                        })
+                        .finally(() => {
+                            fetchingSlides.delete(verseId);
+                        });
+                }
+            },
+            { root: scrollContainer, rootMargin: "300px" },
+        );
+
+        observer.observe(node);
+        return {
+            destroy() {
+                observer.disconnect();
+            },
+        };
+    }
 
     // Watch active slide ID and smoothly scroll the active section and slide into view
     $effect(() => {
@@ -170,6 +253,10 @@
                                 <!-- ADDED ID to slide button -->
                                 <button
                                     id={`slide-${slide.id}`}
+                                    use:lazyLoadSlide={{
+                                        verseId: slide.verseId,
+                                        text: slide.text,
+                                    }}
                                     onclick={() =>
                                         presentation.fire(
                                             presentation.activeCue!,

@@ -1,4 +1,6 @@
 // src/lib/types/models.ts
+export const LOADING_SLIDE_TEXT = "(Loading...)";
+
 export interface PresentationPayload {
   liveText: string;
   nextText: string;
@@ -24,6 +26,7 @@ export interface Slide {
   media?: MediaType;
   notes?: string;
   backgroundId?: string;
+  verseId?: string;
 }
 
 export interface Section {

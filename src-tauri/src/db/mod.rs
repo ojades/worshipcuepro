@@ -157,19 +157,25 @@ fn run_migrations(pool: &DbPool) -> rusqlite::Result<()> {
                     tokenize='unicode61'
                 );
 
-                -- NEW: TRIGGERS TO AUTO-SYNC SONGS FTS
-                CREATE TRIGGER IF NOT EXISTS songs_ai AFTER INSERT ON songs BEGIN
-                    INSERT INTO songs_fts(id, title, artist, raw_lyrics) VALUES (new.id, new.title, new.artist, new.raw_lyrics);
-                END;
 
-                CREATE TRIGGER IF NOT EXISTS songs_ad AFTER DELETE ON songs BEGIN
-                    INSERT INTO songs_fts(songs_fts, id, title, artist, raw_lyrics) VALUES('delete', old.id, old.title, old.artist, old.raw_lyrics);
-                END;
+        DROP TRIGGER IF EXISTS songs_ai;
+        DROP TRIGGER IF EXISTS songs_ad;
+        DROP TRIGGER IF EXISTS songs_au;
 
-                CREATE TRIGGER IF NOT EXISTS songs_au AFTER UPDATE ON songs BEGIN
-                    INSERT INTO songs_fts(songs_fts, id, title, artist, raw_lyrics) VALUES('delete', old.id, old.title, old.artist, old.raw_lyrics);
-                    INSERT INTO songs_fts(id, title, artist, raw_lyrics) VALUES (new.id, new.title, new.artist, new.raw_lyrics);
-                END;
+        CREATE TRIGGER songs_ai AFTER INSERT ON songs BEGIN
+            INSERT INTO songs_fts(id, title, artist, raw_lyrics)
+            VALUES (new.id, new.title, new.artist, new.raw_lyrics);
+        END;
+
+        CREATE TRIGGER songs_ad AFTER DELETE ON songs BEGIN
+            DELETE FROM songs_fts WHERE id = old.id;
+        END;
+
+        CREATE TRIGGER songs_au AFTER UPDATE ON songs BEGIN
+            UPDATE songs_fts
+            SET title = new.title, artist = new.artist, raw_lyrics = new.raw_lyrics
+            WHERE id = old.id;
+        END;
         ",
     )?;
     Ok(())

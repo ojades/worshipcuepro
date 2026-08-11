@@ -3,6 +3,7 @@
     import { onMount, onDestroy } from "svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import type { ExtendedPayload } from "./ProjectorDisplay.svelte";
+    import { LOADING_SLIDE_TEXT } from "$lib/types/models";
 
     type StagePayload = ExtendedPayload & {
         stageShowClock?: boolean;
@@ -281,7 +282,9 @@
                             display.liveText,
                         )}"
                     >
-                        {display.liveText}
+                        {display.liveText !== LOADING_SLIDE_TEXT
+                            ? display.liveText
+                            : ""}
                     </p>
                 {:else}
                     <!-- MASSIVE CENTERED TIMER FOR EMPTY STAGE -->
@@ -321,7 +324,9 @@
                         <p
                             class="stage-next-text cq-text-next text-zinc-400 line-clamp-3 w-full whitespace-pre-wrap"
                         >
-                            {display.nextText}
+                            {display.nextText !== LOADING_SLIDE_TEXT
+                                ? display.nextText
+                                : ""}
                         </p>
                     {:else}
                         <span
@@ -395,7 +400,7 @@
         text-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     }
     .cq-label-next-right {
-        font-size: 4cqw;
+        font-size: 3.5cqw;
         top: 2cqh;
         right: 3cqw;
     }

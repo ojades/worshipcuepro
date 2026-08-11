@@ -12,7 +12,7 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import { goto } from "$app/navigation";
-    import { chunkProse, switchBibleVersionLive } from "$lib/utils/helper";
+    import { chunkProse } from "$lib/utils/helper";
     import type { FtsSearchResult } from "$lib/commands/bible-db";
 
     // Local UI State
@@ -87,7 +87,7 @@
 
             if (matchedVersion) {
                 if (bibleState.selectedVersion !== matchedVersion.id) {
-                    switchBibleVersionLive(matchedVersion.id);
+                    bibleState.switchBibleVersionLive(matchedVersion.id);
                 }
                 smartQuery = smartQuery.substring(firstWord.length).trimStart();
             }
@@ -238,7 +238,7 @@
             );
             if (exactVersion && parsedQuery.chapter === null) {
                 e.preventDefault();
-                switchBibleVersionLive(exactVersion.id);
+                bibleState.switchBibleVersionLive(exactVersion.id);
                 smartQuery = "";
                 return;
             }
@@ -255,89 +255,52 @@
     }
 
     async function sendVerseToProjector(verse: any) {
-        if (
-            !bibleState.selectedVersion ||
-            !bibleState.selectedBook ||
-            !bibleState.selectedChapter
-        )
-            return;
-
-        if (!verse.text) {
-            await bibleState.resolveVerseText(verse.id);
-            verse = bibleState.verses.find((v) => v.id === verse.id) || verse;
+        try {
+            const cue = await bibleState.generateChapterCue(verse.id);
+            // Fire the cue, targeting the specific verse's first slide
+            presentation.fire(cue, `verse_${verse.id}`, `slide_${verse.id}_0`);
+            goto("/operator");
+        } catch (e) {
+            console.error("Failed to generate Bible cue:", e);
         }
-
-        const version = bibleState.versions.find(
-            (v) => v.id === bibleState.selectedVersion,
-        );
-        const versionAbbr = version?.abbreviation || version?.name || "Bible";
-        const linesPerSlide = (settingsState.config as any).linesPerSlide || 0;
-        const currentFontScale =
-            settingsState.config.projector?.textScale ?? 1.0;
-
-        const bibleCue = {
-            id: `bible_${bibleState.selectedVersion}_${bibleState.selectedChapter}`,
-            type: "bible",
-            title: verse.reference, // Use specific reference
-            artist: versionAbbr,
-            sections: [
-                {
-                    id: `verse_${verse.id}`,
-                    title: verse.reference,
-                    slides: chunkProse(
-                        verse.text || "Loading...",
-                        linesPerSlide,
-                        currentFontScale,
-                    ).map((chunkText, i, arr) => ({
-                        id: `slide_${verse.id}_${i}`,
-                        text: chunkText,
-                        reference: `${verse.reference} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
-                    })),
-                },
-            ],
-        };
-
-        presentation.fire(bibleCue, `slide_${verse.id}_0`);
-        goto("/operator");
     }
 
-    // --- NEW: Fire Search Result directly to projector ---
     async function sendSearchResultToProjector(result: FtsSearchResult) {
-        if (!bibleState.selectedVersion) return;
+        // 1. Parse the reference (e.g. "John 3:16")
+        const regex = /^(\d?\s*[a-zA-Z]+(?:[\s-]*[a-zA-Z]+)*)\s+(\d+):(\d+)$/i;
+        const match = result.reference.match(regex);
+        if (!match) return;
 
-        const version = bibleState.versions.find(
-            (v) => v.id === bibleState.selectedVersion,
+        const bookQuery = match[1].trim().toLowerCase();
+        const chapterNum = match[2];
+        const verseNum = match[3];
+
+        // 2. Navigate bibleState to that exact chapter silently
+        const matchedBooks = bibleState.books.filter((b) =>
+            b.name.toLowerCase().includes(bookQuery),
         );
-        const versionAbbr = version?.abbreviation || version?.name || "Bible";
-        const linesPerSlide = (settingsState.config as any).linesPerSlide || 0;
-        const currentFontScale =
-            settingsState.config.projector?.textScale ?? 1.0;
+        const book =
+            matchedBooks.find((b) => b.name.toLowerCase() === bookQuery) ||
+            matchedBooks[0];
 
-        const bibleCue = {
-            id: `bible_search_${Date.now()}`,
-            type: "bible",
-            title: result.reference,
-            artist: versionAbbr,
-            sections: [
-                {
-                    id: `sec_search`,
-                    title: result.reference,
-                    // CRITICAL: We use full_text here so the live screen doesn't show <mark> tags or '...'
-                    slides: chunkProse(
-                        result.full_text,
-                        linesPerSlide,
-                        currentFontScale,
-                    ).map((chunkText, i, arr) => ({
-                        id: `slide_${i}`,
-                        text: chunkText,
-                        reference: `${result.reference} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
-                    })),
-                },
-            ],
-        };
+        if (book) {
+            await bibleState.selectBook(book.id);
+            const targetChapter = bibleState.chapters.find(
+                (c) => c.number === chapterNum,
+            );
 
-        presentation.fire(bibleCue, `slide_0`);
-        goto("/operator");
+            if (targetChapter) {
+                await bibleState.selectChapter(targetChapter.id);
+
+                // 3. Find the exact verse ID
+                const targetVerse = bibleState.verses.find((v) =>
+                    v.reference.endsWith(`:${verseNum}`),
+                );
+                if (targetVerse) {
+                    await sendVerseToProjector(targetVerse);
+                }
+            }
+        }
     }
 </script>
 
@@ -418,7 +381,9 @@
                             <button
                                 type="button"
                                 onclick={() => {
-                                    switchBibleVersionLive(version.id);
+                                    bibleState.switchBibleVersionLive(
+                                        version.id,
+                                    );
                                     isTranslationOpen = false;
                                 }}
                                 class="w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-zinc-800"

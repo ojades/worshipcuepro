@@ -18,7 +18,7 @@
     import { convertFileSrc } from "@tauri-apps/api/core";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
     import { settingsState } from "$lib/state/settings.svelte";
-    import { chunkProse, switchBibleVersionLive } from "$lib/utils/helper";
+    import { chunkProse } from "$lib/utils/helper";
     import type { FtsSearchResult } from "$lib/commands/bible-db";
     import type { SongSearchResult } from "$lib/commands/song-db"; // NEW: Import Song FTS Type
 
@@ -59,7 +59,7 @@
 
             if (matchedVersion) {
                 if (bibleState.selectedVersion !== matchedVersion.id) {
-                    switchBibleVersionLive(matchedVersion.id);
+                    bibleState.switchBibleVersionLive(matchedVersion.id);
                 }
                 searchQuery = searchQuery
                     .substring(firstWord.length)
@@ -285,52 +285,82 @@
             const newCue = presentation.activePlaylist?.cues.at(-1);
             if (newCue) presentation.fire(newCue);
         } else if (result.type === "version_switch") {
-            switchBibleVersionLive(result.payload.id);
+            bibleState.switchBibleVersionLive(result.payload.id);
         } else if (result.type === "bible_nav") {
             const { bookId, chapterNum, verseNum } = result.payload;
             goto("/operator/bibles");
             if (chapterNum) {
-                bibleState.goToReference(bookId, chapterNum, verseNum);
+                // If they typed a verse, go to it and FIRE it instantly
+                await bibleState.goToReference(bookId, chapterNum, verseNum);
+
+                if (verseNum) {
+                    const targetVerse = bibleState.verses.find((v) =>
+                        v.reference.endsWith(`:${verseNum}`),
+                    );
+                    if (targetVerse) {
+                        const cue = await bibleState.generateChapterCue(
+                            targetVerse.id,
+                        );
+                        presentation.fire(
+                            cue,
+                            `verse_${targetVerse.id}`,
+                            `slide_${targetVerse.id}_0`,
+                        );
+                        goto("/operator");
+                    }
+                }
             } else {
                 bibleState.selectBook(bookId);
             }
         } else if (result.type === "bible_fts") {
             const ftsItem = result.payload as FtsSearchResult;
-            const version = bibleState.versions.find(
-                (v) => v.id === bibleState.selectedVersion,
-            );
-            const versionAbbr =
-                version?.abbreviation || version?.name || "Bible";
-            const linesPerSlide =
-                (settingsState.config as any).linesPerSlide || 0;
-            const currentFontScale =
-                settingsState.config.projector?.textScale ?? 1.0;
 
-            const bibleCue = {
-                id: `bible_search_${Date.now()}`,
-                type: "bible",
-                title: ftsItem.reference,
-                artist: versionAbbr,
-                sections: [
-                    {
-                        id: `sec_search`,
-                        title: ftsItem.reference,
-                        slides: chunkProse(
-                            ftsItem.full_text,
-                            linesPerSlide,
-                            currentFontScale,
-                        ).map((chunkText, i, arr) => ({
-                            id: `slide_${i}`,
-                            text: chunkText,
-                            reference: `${ftsItem.reference} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
-                        })),
-                    },
-                ],
-            };
+            // 1. Parse the reference from the FTS result (e.g. "John 3:16")
+            const regex =
+                /^(\d?\s*[a-zA-Z]+(?:[\s-]*[a-zA-Z]+)*)\s+(\d+):(\d+)$/i;
+            const match = ftsItem.reference.match(regex);
 
-            presentation.fire(bibleCue, `slide_0`);
-            await playlists.ensureActivePlaylist();
-            goto("/operator");
+            if (match) {
+                const bookQuery = match[1].trim().toLowerCase();
+                const chapterNum = match[2];
+                const verseNum = match[3];
+
+                const matchedBooks = bibleState.books.filter((b) =>
+                    b.name.toLowerCase().includes(bookQuery),
+                );
+                const book =
+                    matchedBooks.find(
+                        (b) => b.name.toLowerCase() === bookQuery,
+                    ) || matchedBooks[0];
+
+                if (book) {
+                    // 2. Load the chapter state
+                    await bibleState.selectBook(book.id);
+                    const targetChapter = bibleState.chapters.find(
+                        (c) => c.number === chapterNum,
+                    );
+
+                    if (targetChapter) {
+                        await bibleState.selectChapter(targetChapter.id);
+
+                        // 3. Generate the full chapter cue and fire to the specific verse
+                        const targetVerse = bibleState.verses.find((v) =>
+                            v.reference.endsWith(`:${verseNum}`),
+                        );
+                        if (targetVerse) {
+                            const cue = await bibleState.generateChapterCue(
+                                targetVerse.id,
+                            );
+                            presentation.fire(
+                                cue,
+                                `verse_${targetVerse.id}`,
+                                `slide_${targetVerse.id}_0`,
+                            );
+                            goto("/operator");
+                        }
+                    }
+                }
+            }
         } else if (result.type === "media") {
             const mediaItem = result.payload;
             const safeUrl =

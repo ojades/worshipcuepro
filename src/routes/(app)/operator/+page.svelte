@@ -6,7 +6,7 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { bibleState } from "$lib/state/bible.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
-    import { chunkProse, switchBibleVersionLive } from "$lib/utils/helper";
+    import { chunkProse } from "$lib/utils/helper";
     import {
         Settings2,
         Edit2,
@@ -114,7 +114,7 @@
         isSwitchingVersion = true;
 
         try {
-            await switchBibleVersionLive(newVersionId);
+            await bibleState.switchBibleVersionLive(newVersionId);
         } catch (e) {
             console.error("Failed to switch version:", e);
         } finally {
@@ -321,6 +321,7 @@
                         >
                             <option value={0}>Default</option>
                             <option value={2}>2 Lines</option>
+                            <option value={3}>3 Lines</option>
                             <option value={4}>4 Lines</option>
                             <option value={6}>6 Lines</option>
                         </select>

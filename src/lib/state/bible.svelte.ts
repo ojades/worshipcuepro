@@ -12,6 +12,9 @@ import {
   deleteBibleFtsVersionAPI,
   type FtsVerseInsert,
 } from "$lib/commands/bible-db";
+import { LOADING_SLIDE_TEXT } from "$lib/types/models";
+import { chunkProse } from "$lib/utils/helper";
+import { presentation } from "./presentation.svelte";
 import { settingsState } from "./settings.svelte";
 
 const CACHE_TTL_MS = 20 * 24 * 60 * 60 * 1000; // 20 Days
@@ -911,6 +914,119 @@ class BibleState {
         return "Error loading text";
       }
     }
+  }
+
+  /**
+   * Switches the Bible version globally, retains the currently selected Book/Chapter,
+   * and seamlessly hot-swaps the live presentation slides if a Bible cue is active.
+   */
+  async switchBibleVersionLive(newVersionId: string) {
+    const targetBook = bibleState.selectedBook;
+    const targetChapter = bibleState.selectedChapter;
+
+    await bibleState.selectVersion(newVersionId);
+
+    if (!targetBook || !targetChapter) return;
+
+    await bibleState.selectBook(targetBook);
+    await bibleState.selectChapter(targetChapter);
+
+    const isBibleCue =
+      presentation.activeCue &&
+      (presentation.activeCue as any).type === "bible";
+    if (!isBibleCue) return;
+
+    const currentActiveSlideId = presentation.activeSlideId;
+    let activeVerseId = presentation.activeCue?.sections?.[0]?.id;
+
+    if (currentActiveSlideId && presentation.activeCue?.sections) {
+      const activeSection = presentation.activeCue.sections.find((s: any) =>
+        s.slides?.some((sl: any) => sl.id === currentActiveSlideId),
+      );
+      if (activeSection) activeVerseId = activeSection.id;
+    }
+
+    if (activeVerseId) {
+      const activeVerseRawId = activeVerseId.replace("verse_", "");
+      await bibleState.resolveVerseText(activeVerseRawId);
+    }
+
+    const version = bibleState.versions.find(
+      (v) => v.id === bibleState.selectedVersion,
+    );
+    const versionAbbr = version?.abbreviation || version?.name || "Bible";
+    const book = bibleState.books.find((b) => b.id === bibleState.selectedBook);
+    const chapter = bibleState.chapters.find(
+      (c) => c.id === bibleState.selectedChapter,
+    );
+
+    const linesPerSlide = (settingsState.config as any).linesPerSlide || 0;
+    const currentFontScale =
+      settingsState.config.projector?.textFormat?.fontSizeScale ?? 1.0;
+
+    const bibleCue = {
+      id: `bible_${bibleState.selectedVersion}_${bibleState.selectedChapter}`,
+      type: "bible",
+      title: `${book?.name} ${chapter?.number}`,
+      artist: versionAbbr,
+      sections: bibleState.verses.map((v) => {
+        // ALWAYS use the loaded text or the loading placeholder
+        const textToChunk = v.text || "(Loading...)";
+        const chunks = chunkProse(textToChunk, linesPerSlide, currentFontScale);
+        return {
+          id: `verse_${v.id}`,
+          title: v.reference,
+          slides: chunks.map((chunkText, i) => ({
+            id: `slide_${v.id}_${i}`,
+            text: chunkText,
+            reference: `${v.reference} (${versionAbbr})${chunks.length > 1 ? ` [${i + 1}/${chunks.length}]` : ""}`,
+            verseId: v.id,
+          })),
+        };
+      }),
+    };
+
+    presentation.fire(bibleCue, activeVerseId);
+  }
+
+  async generateChapterCue(verseId: string) {
+    if (!this.selectedVersion || !this.selectedBook || !this.selectedChapter) {
+      throw new Error("Bible context not fully loaded.");
+    }
+
+    const version = this.versions.find((v) => v.id === this.selectedVersion);
+    const versionAbbr = version?.abbreviation || version?.name || "Bible";
+    const book = this.books.find((b) => b.id === this.selectedBook);
+    const chapter = this.chapters.find((c) => c.id === this.selectedChapter);
+
+    // REMOVE the massive Promise.all here! It caused rate limiting on YouVersion.
+    // Let the lazy loader handle the fetching!
+
+    const linesPerSlide = (settingsState.config as any).linesPerSlide || 0;
+    const currentFontScale = settingsState.config.projector?.textScale ?? 1.0;
+
+    const bibleCue = {
+      id: `bible_${this.selectedVersion}_${this.selectedChapter}`,
+      type: "bible",
+      title: `${book?.name} ${chapter?.number}`,
+      artist: versionAbbr,
+      sections: this.verses.map((v) => {
+        const textToChunk = v.text || "(Loading...)";
+        const chunks = chunkProse(textToChunk, linesPerSlide, currentFontScale);
+        return {
+          id: `verse_${v.id}`,
+          title: v.reference,
+          slides: chunks.map((chunkText: string, i: number, arr: string[]) => ({
+            id: `slide_${v.id}_${i}`,
+            text: chunkText,
+            reference: `${v.reference} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
+            verseId: v.id,
+          })),
+        };
+      }),
+    };
+
+    return bibleCue;
   }
 
   // ----------------------------------------

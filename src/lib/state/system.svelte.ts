@@ -53,7 +53,19 @@ class SystemState {
   setDisplays(newDisplays: DisplayInfo[]) {
     this.displays = newDisplays;
 
-    // Auto-assign if not set, based on basic deduction
+    if (
+      this.projectorMonitor &&
+      !newDisplays.some((d) => d.name === this.projectorMonitor)
+    ) {
+      this.projectorMonitor = null;
+    }
+    if (
+      this.stageMonitor &&
+      !newDisplays.some((d) => d.name === this.stageMonitor)
+    ) {
+      this.stageMonitor = null;
+    }
+
     if (!this.projectorMonitor && newDisplays.length > 1) {
       const secondary = newDisplays.find((d) => !d.is_primary);
       if (secondary) this.projectorMonitor = secondary.name;
