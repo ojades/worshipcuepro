@@ -137,7 +137,7 @@ pub fn bulk_insert_bible_fts(
 #[tauri::command]
 pub fn search_bible_fts(
     pool: State<'_, DbPool>,
-    version: String,
+    _version: String,
     query_string: String,
     limit: i32,
 ) -> Result<Vec<FtsSearchResult>, String> {
@@ -155,7 +155,11 @@ pub fn search_bible_fts(
         return Ok(Vec::new());
     }
 
-    // Return reference, HTML snippet, and raw text
+    // Because a user might have 4 Bibles installed, we fetch extra rows
+    // to account for duplicates, then filter them down to the exact `limit` in Rust.
+    let fetch_limit = limit * 4;
+
+    // Notice we REMOVED the `GROUP BY reference` here so snippet() works perfectly
     let mut stmt = conn
         .prepare(
             "SELECT
@@ -163,14 +167,14 @@ pub fn search_bible_fts(
                 snippet(bible_fts, 2, '<mark class=\"bg-violet-900/60 text-violet-300 font-bold px-1 rounded\">', '</mark>', '...', 64),
                 text
              FROM bible_fts
-             WHERE version = ?1 AND bible_fts MATCH ?2
+             WHERE bible_fts MATCH ?1
              ORDER BY rank
-             LIMIT ?3",
+             LIMIT ?2",
         )
         .map_err(|e| e.to_string())?;
 
     let iter = stmt
-        .query_map(rusqlite::params![version, safe_query, limit], |row| {
+        .query_map(rusqlite::params![safe_query, fetch_limit], |row| {
             Ok(FtsSearchResult {
                 reference: row.get(0)?,
                 text: row.get(1)?,
@@ -180,8 +184,21 @@ pub fn search_bible_fts(
         .map_err(|e| e.to_string())?;
 
     let mut results = Vec::new();
+    let mut seen_references = std::collections::HashSet::new();
+
+    // Deduplicate in Rust: Keep only the highest-ranked result for each reference
     for item in iter {
-        results.push(item.map_err(|e| e.to_string())?);
+        let res = item.map_err(|e| e.to_string())?;
+
+        if !seen_references.contains(&res.reference) {
+            seen_references.insert(res.reference.clone());
+            results.push(res);
+
+            // Stop once we hit the requested UI limit
+            if results.len() as i32 >= limit {
+                break;
+            }
+        }
     }
 
     Ok(results)

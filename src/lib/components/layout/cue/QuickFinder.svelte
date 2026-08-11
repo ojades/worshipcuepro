@@ -315,7 +315,7 @@
         } else if (result.type === "bible_fts") {
             const ftsItem = result.payload as FtsSearchResult;
 
-            // 1. Parse the reference from the FTS result (e.g. "John 3:16")
+            // 1. Parse the reference from the FTS result
             const regex =
                 /^(\d?\s*[a-zA-Z]+(?:[\s-]*[a-zA-Z]+)*)\s+(\d+):(\d+)$/i;
             const match = ftsItem.reference.match(regex);
@@ -334,7 +334,7 @@
                     ) || matchedBooks[0];
 
                 if (book) {
-                    // 2. Load the chapter state
+                    // 2. Navigate the state to this book/chapter
                     await bibleState.selectBook(book.id);
                     const targetChapter = bibleState.chapters.find(
                         (c) => c.number === chapterNum,
@@ -343,10 +343,11 @@
                     if (targetChapter) {
                         await bibleState.selectChapter(targetChapter.id);
 
-                        // 3. Generate the full chapter cue and fire to the specific verse
+                        // 3. Generate the full chapter cue using the ACTIVE translation
                         const targetVerse = bibleState.verses.find((v) =>
                             v.reference.endsWith(`:${verseNum}`),
                         );
+
                         if (targetVerse) {
                             const cue = await bibleState.generateChapterCue(
                                 targetVerse.id,
@@ -356,6 +357,7 @@
                                 `verse_${targetVerse.id}`,
                                 `slide_${targetVerse.id}_0`,
                             );
+                            await playlists.ensureActivePlaylist();
                             goto("/operator");
                         }
                     }

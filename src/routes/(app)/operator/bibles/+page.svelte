@@ -266,7 +266,7 @@
     }
 
     async function sendSearchResultToProjector(result: FtsSearchResult) {
-        // 1. Parse the reference (e.g. "John 3:16")
+        // 1. Parse the reference (e.g. "John 3:16" or "1 John 2:4")
         const regex = /^(\d?\s*[a-zA-Z]+(?:[\s-]*[a-zA-Z]+)*)\s+(\d+):(\d+)$/i;
         const match = result.reference.match(regex);
         if (!match) return;
@@ -292,11 +292,14 @@
             if (targetChapter) {
                 await bibleState.selectChapter(targetChapter.id);
 
-                // 3. Find the exact verse ID
+                // 3. Find the exact verse ID in the CURRENTLY SELECTED translation
                 const targetVerse = bibleState.verses.find((v) =>
                     v.reference.endsWith(`:${verseNum}`),
                 );
+
                 if (targetVerse) {
+                    // This uses `generateChapterCue` which will automatically fetch from YouVersion
+                    // if the text is null, ensuring the screen gets the active translation!
                     await sendVerseToProjector(targetVerse);
                 }
             }

@@ -148,6 +148,7 @@ pub fn run() {
             commands::db::settings::set_core_workspace,
             commands::db::settings::get_core_workspace,
             commands::db::shoot::fetch_shoot_slides,
+            commands::db::shoot::fetch_all_shoots,
             commands::db::shoot::save_shoot,
             commands::db::shoot::delete_shoot,
             commands::db::shoot::fetch_shoot,
