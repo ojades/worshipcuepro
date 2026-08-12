@@ -30,6 +30,14 @@
     let previousDisplayCount = $state(0);
     let hasInitializedDisplays = $state(false);
 
+    // --- NEW: Filter out the Primary Display to protect the operator ---
+    let externalProjectorDisplays = $derived(
+        systemState.availableForProjector.filter((d) => !d.is_primary),
+    );
+    let externalStageDisplays = $derived(
+        systemState.availableForStage.filter((d) => !d.is_primary),
+    );
+
     onMount(() => {
         // --- DYNAMIC DISPLAY POLLING & AUTO-CONNECT ---
         const pollDisplays = async () => {
@@ -120,7 +128,7 @@
                 if (!systemState.projectorMonitor) {
                     systemState.addAlert({
                         message:
-                            "Please select a monitor for the Projector output.",
+                            "Please select an external monitor for the Projector output.",
                         type: "warning",
                         timeout: 3000,
                     });
@@ -147,7 +155,7 @@
                 if (!systemState.stageMonitor) {
                     systemState.addAlert({
                         message:
-                            "Please select a monitor for the Stage Display.",
+                            "Please select an external monitor for the Stage Display.",
                         type: "warning",
                         timeout: 3000,
                     });
@@ -169,7 +177,6 @@
 <header
     class="h-14 border-b border-border bg-card/40 backdrop-blur-md px-6 flex items-center justify-between z-50 relative"
 >
-    <!-- KEEP ALL HTML EXACTLY AS IT WAS -->
     <div class="flex flex-col">
         <h1
             class="text-sm font-bold tracking-tight text-foreground/90 uppercase flex items-center gap-2"
@@ -292,12 +299,16 @@
                                 class="w-full text-xs bg-background text-foreground border border-border rounded-lg px-2.5 py-1.5 focus:border-neon-violet focus:outline-hidden disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                             >
                                 <option value="">-- Unassigned --</option>
-                                {#each systemState.availableForProjector as display}
+                                {#each externalProjectorDisplays as display}
                                     <option value={display.name}>
                                         {display.name} ({display.width}x{display.height})
-                                        {display.is_primary ? "[Primary]" : ""}
                                     </option>
                                 {/each}
+                                {#if externalProjectorDisplays.length === 0}
+                                    <option value="" disabled
+                                        >No external displays found</option
+                                    >
+                                {/if}
                             </select>
 
                             <button
@@ -343,12 +354,16 @@
                                 class="w-full text-xs bg-background text-foreground border border-border rounded-lg px-2.5 py-1.5 focus:border-neon-cyan focus:outline-hidden disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                             >
                                 <option value="">-- Unassigned --</option>
-                                {#each systemState.availableForStage as display}
+                                {#each externalStageDisplays as display}
                                     <option value={display.name}>
                                         {display.name} ({display.width}x{display.height})
-                                        {display.is_primary ? "[Primary]" : ""}
                                     </option>
                                 {/each}
+                                {#if externalStageDisplays.length === 0}
+                                    <option value="" disabled
+                                        >No external displays found</option
+                                    >
+                                {/if}
                             </select>
 
                             <button
