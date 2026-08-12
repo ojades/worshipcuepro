@@ -1,7 +1,13 @@
 <!-- src/lib/components/layout/cue/SlideGrid.svelte -->
 <script lang="ts">
     import { presentation } from "$lib/state/presentation.svelte";
-    import { X, Save, Image as ImageIcon, Video } from "@lucide/svelte";
+    import {
+        X,
+        Save,
+        Image as ImageIcon,
+        Video,
+        BookOpen,
+    } from "@lucide/svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
     import { bibleState } from "$lib/state/bible.svelte";
@@ -21,7 +27,6 @@
     }>();
 
     let scrollContainer: HTMLDivElement | null = $state(null);
-
     const fetchingSlides = new Set<string>();
 
     function lazyLoadSlide(
@@ -32,66 +37,72 @@
 
         const observer = new IntersectionObserver(
             (entries) => {
-                if (entries[0].isIntersecting && !fetchingSlides.has(verseId)) {
-                    fetchingSlides.add(verseId);
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting && !fetchingSlides.has(verseId)) {
+                        fetchingSlides.add(verseId);
 
-                    bibleState
-                        .resolveVerseText(verseId)
-                        .then((newText) => {
-                            if (newText && presentation.activeCue) {
-                                const linesPerSlide =
-                                    (settingsState.config as any)
-                                        .linesPerSlide || 0;
-                                const currentFontScale =
-                                    settingsState.config.projector?.textScale ??
-                                    1.0;
-                                const versionAbbr =
-                                    bibleState.versions.find(
-                                        (v) =>
-                                            v.id === bibleState.selectedVersion,
-                                    )?.abbreviation || "Bible";
+                        // Disconnect immediately to prevent re-triggering during array swap
+                        observer.disconnect();
 
-                                const newChunks = chunkProse(
-                                    newText,
-                                    linesPerSlide,
-                                    currentFontScale,
-                                );
+                        bibleState
+                            .resolveVerseText(verseId)
+                            .then((newText) => {
+                                if (newText && presentation.activeCue) {
+                                    const linesPerSlide =
+                                        (settingsState.config as any)
+                                            .linesPerSlide || 0;
+                                    const currentFontScale =
+                                        settingsState.config.projector
+                                            ?.textScale ?? 1.0;
+                                    const versionAbbr =
+                                        bibleState.versions.find(
+                                            (v) =>
+                                                v.id ===
+                                                bibleState.selectedVersion,
+                                        )?.abbreviation || "Bible";
 
-                                const sectionIndex =
-                                    presentation.activeCue.sections.findIndex(
-                                        (s: any) => s.id === `verse_${verseId}`,
+                                    const newChunks = chunkProse(
+                                        newText,
+                                        linesPerSlide,
+                                        currentFontScale,
                                     );
+                                    const sectionIndex =
+                                        presentation.activeCue.sections.findIndex(
+                                            (s: any) =>
+                                                s.id === `verse_${verseId}`,
+                                        );
 
-                                if (sectionIndex !== -1) {
-                                    const updatedSlides = newChunks.map(
-                                        (chunkText, i, arr) => ({
-                                            id: `slide_${verseId}_${i}`,
-                                            text: chunkText,
-                                            reference: `${presentation.activeCue!.sections[sectionIndex].title} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
-                                            verseId: verseId,
-                                        }),
-                                    );
+                                    if (sectionIndex !== -1) {
+                                        const updatedSlides = newChunks.map(
+                                            (chunkText, i, arr) => ({
+                                                id: `slide_${verseId}_${i}`,
+                                                text: chunkText,
+                                                reference: `${presentation.activeCue!.sections[sectionIndex].title} (${versionAbbr})${arr.length > 1 ? ` [${i + 1}/${arr.length}]` : ""}`,
+                                                verseId: verseId,
+                                            }),
+                                        );
 
-                                    // Force Svelte reactivity by cloning the array
-                                    const newSections = [
-                                        ...presentation.activeCue.sections,
-                                    ];
-                                    newSections[sectionIndex] = {
-                                        ...newSections[sectionIndex],
-                                        slides: updatedSlides,
-                                    };
+                                        // Deep clone array to force Svelte 5 reactivity trigger
+                                        const newSections = [
+                                            ...presentation.activeCue.sections,
+                                        ];
+                                        newSections[sectionIndex] = {
+                                            ...newSections[sectionIndex],
+                                            slides: updatedSlides,
+                                        };
 
-                                    presentation.activeCue.sections =
-                                        newSections;
+                                        presentation.activeCue.sections =
+                                            newSections;
+                                    }
                                 }
-                            }
-                        })
-                        .finally(() => {
-                            fetchingSlides.delete(verseId);
-                        });
-                }
+                            })
+                            .finally(() => {
+                                fetchingSlides.delete(verseId);
+                            });
+                    }
+                });
             },
-            { root: scrollContainer, rootMargin: "300px" },
+            { root: null, rootMargin: "300px" }, // root: null correctly uses the viewport boundary even inside nested scrolling
         );
 
         observer.observe(node);
@@ -102,7 +113,6 @@
         };
     }
 
-    // Watch active slide ID and smoothly scroll the active section and slide into view
     $effect(() => {
         if (
             presentation.activeSlideId &&
@@ -118,7 +128,6 @@
                 );
 
                 if (activeSection) {
-                    // --- 1. Vertical Auto-Scroll (Section Level) ---
                     const activeElement = document.getElementById(
                         `section-for-${activeSection.id}`,
                     );
@@ -141,7 +150,6 @@
                         }
                     }
 
-                    // --- 2. Horizontal Auto-Scroll (Slide Level) ---
                     const horizontalContainer = document.getElementById(
                         `scroll-x-for-${activeSection.id}`,
                     );
@@ -166,7 +174,7 @@
                                 left:
                                     horizontalContainer.scrollLeft +
                                     offsetLeft -
-                                    40, // 40px buffer
+                                    40,
                                 behavior: "smooth",
                             });
                         }
@@ -180,7 +188,7 @@
 {#if presentation.activeCue}
     <div class="flex flex-col h-full">
         {#if isQuickEditing}
-            <!-- Quick Edit Pane -->
+            <!-- Quick Edit Pane (Unchanged) -->
             <div
                 class="flex-1 flex flex-col gap-3 min-h-[300px] animate-in fade-in slide-in-from-top-2 duration-200"
             >
@@ -196,17 +204,15 @@
                             icon={X}
                             onclick={onCancelEdit}
                             title="({formatShortcut(SHORTCUTS.ESCAPE)}}"
+                            >Cancel</Button
                         >
-                            Cancel
-                        </Button>
                         <Button
                             variant="primary"
                             icon={Save}
                             onclick={onSaveEdit}
                             title="({formatShortcut(SHORTCUTS.SAVE_EDIT)}}"
+                            >Save & Update</Button
                         >
-                            Save & Update
-                        </Button>
                     </div>
                 </div>
                 <textarea
@@ -220,7 +226,8 @@
                 bind:this={scrollContainer}
                 class="flex-1 overflow-y-auto min-h-0 space-y-6 pb-6 scroll-smooth scrollbar-none"
             >
-                {#each presentation.activeCue.sections as section}
+                <!-- FIX: Added (section.id) -->
+                {#each presentation.activeCue.sections as section (section.id)}
                     {@const isActiveSection = section.slides.some(
                         (s) => s.id === presentation.activeSlideId,
                     )}
@@ -229,7 +236,6 @@
                         id={`section-for-${section.id}`}
                         class="space-y-3 transition-opacity duration-200"
                     >
-                        <!-- Section Header -->
                         <div class="flex items-center gap-2 sticky left-0">
                             <div
                                 class="h-4 w-4 rounded-sm shadow-sm"
@@ -243,14 +249,12 @@
                             </h3>
                         </div>
 
-                        <!-- Horizontal Slide Strip -->
-                        <!-- ADDED ID for horizontal scrolling -->
                         <div
                             id={`scroll-x-for-${section.id}`}
                             class="flex flex-nowrap overflow-x-auto gap-3 pb-3 scrollbar-none scroll-smooth"
                         >
-                            {#each section.slides as slide}
-                                <!-- ADDED ID to slide button -->
+                            <!-- FIX: Added (slide.id) -->
+                            {#each section.slides as slide (slide.id)}
                                 <button
                                     id={`slide-${slide.id}`}
                                     use:lazyLoadSlide={{
@@ -263,18 +267,16 @@
                                             section.id,
                                             slide.id,
                                         )}
-                                    class="shrink-0 w-56 h-32 relative flex flex-col items-start justify-start p-4 text-left rounded-xl bg-card border transition-all duration-100 hover:border-neon-cyan/50 hover:bg-neon-violet/10 overflow-hidden
-                                        {presentation.activeSlideId === slide.id
+                                    class="shrink-0 w-56 h-32 relative flex flex-col items-start justify-start p-4 text-left rounded-xl bg-card border transition-all duration-100 hover:border-neon-cyan/50 hover:bg-neon-violet/10 overflow-hidden {presentation.activeSlideId ===
+                                    slide.id
                                         ? 'border-neon-cyan ring-1 ring-neon-cyan shadow-[0_0_15px_rgba(34,211,238,0.3)]'
                                         : 'border-border'}"
                                 >
-                                    <!-- Foreground Media Preview Thumbnail -->
                                     {#if slide.media}
                                         <div
                                             class="absolute inset-0 bg-zinc-900 pointer-events-none"
                                         >
                                             {#if slide.media.type === "video"}
-                                                <!-- Use #t=0.1 to just show the first frame instead of autoplaying everywhere -->
                                                 <video
                                                     src="{slide.media
                                                         .url}#t=0.1"
@@ -307,9 +309,12 @@
                                             {/if}
                                         </div>
                                     {:else}
-                                        <!-- Normal Text Preview -->
+                                        <!-- Normal Text Preview with styling support for (Loading...) -->
                                         <span
-                                            class="text-[15px] font-medium text-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed z-10"
+                                            class="text-[15px] font-medium text-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed z-10 {slide.text ===
+                                            '(Loading...)'
+                                                ? 'animate-pulse text-zinc-600'
+                                                : ''}"
                                         >
                                             {slide.text || "(Blank Slide)"}
                                         </span>
@@ -330,25 +335,11 @@
         {/if}
     </div>
 {:else}
-    <!-- Empty State -->
     <div
         class="flex flex-col items-center justify-center h-full text-muted-foreground space-y-4"
     >
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="w-16 h-16 opacity-30"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-        >
-            <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1"
-                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-            />
-        </svg>
-        <p class="text-sm">
+        <BookOpen size={48} class="opacity-20" />
+        <p class="text-lg font-medium">
             Select a cue from the library or playlist to begin.
         </p>
     </div>

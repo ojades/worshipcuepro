@@ -18,21 +18,18 @@
     import { convertFileSrc } from "@tauri-apps/api/core";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
     import { settingsState } from "$lib/state/settings.svelte";
-    import { chunkProse } from "$lib/utils/helper";
     import type { FtsSearchResult } from "$lib/commands/bible-db";
-    import type { SongSearchResult } from "$lib/commands/song-db"; // NEW: Import Song FTS Type
+    import type { SongSearchResult } from "$lib/commands/song-db";
 
-    // UX State
     let searchQuery = $state("");
     let activeTab = $state<"all" | "songs" | "bible" | "media">("all");
     let searchInput: HTMLInputElement;
     let selectedIndex = $state(0);
 
-    // Asynchronous state for FTS search
     let isSearchingBible = $state(false);
-    let isSearchingSongs = $state(false); // NEW: Song loading state
+    let isSearchingSongs = $state(false);
     let bibleFtsResults = $state<FtsSearchResult[]>([]);
-    let songFtsResults = $state<SongSearchResult[]>([]); // NEW: Song FTS results
+    let songFtsResults = $state<SongSearchResult[]>([]);
     let searchTimeout: ReturnType<typeof setTimeout>;
 
     const tabs = [
@@ -48,7 +45,6 @@
         return bibleState.versions.filter((v) => enabledIds.includes(v.id));
     });
 
-    // Auto-detect Version Abbreviations in the Quick Finder
     $effect(() => {
         const parts = searchQuery.trimStart().split(" ");
         if (parts.length > 1) {
@@ -68,14 +64,12 @@
         }
     });
 
-    // --- NEW: Concurrent Async FTS Search for Bible & Songs ---
     $effect(() => {
         const query = searchQuery.toLowerCase().trim();
         const regex =
             /^(\d?\s*[a-z]+(?:[\s-]*[a-z]+)*)\s*(?:(\d+)\s*(?:[:\s]\s*(\d+))?)?$/i;
         const match = query.match(regex);
 
-        // Does it look like a Bible navigation reference?
         const isBibleNav =
             match &&
             bibleState.books.some(
@@ -85,7 +79,6 @@
         if (query.length > 2) {
             clearTimeout(searchTimeout);
 
-            // Set loading indicators
             if (!isBibleNav && (activeTab === "all" || activeTab === "bible"))
                 isSearchingBible = true;
             if (activeTab === "all" || activeTab === "songs")
@@ -94,7 +87,6 @@
             searchTimeout = setTimeout(async () => {
                 const promises = [];
 
-                // 1. Search Bible
                 if (
                     !isBibleNav &&
                     (activeTab === "all" || activeTab === "bible")
@@ -108,7 +100,6 @@
                     bibleFtsResults = [];
                 }
 
-                // 2. Search Songs
                 if (activeTab === "all" || activeTab === "songs") {
                     promises.push(
                         songsState
@@ -131,14 +122,12 @@
         }
     });
 
-    // Derived Search Results (Sync + Async merged)
     let searchResults = $derived.by(() => {
         if (!searchQuery.trim()) return [];
 
         const query = searchQuery.toLowerCase();
         let results: any[] = [];
 
-        // 0. Detect pure Version Abbreviation Switch (e.g. just typing "KJV")
         if (activeTab === "all" || activeTab === "bible") {
             const exactVersion = enabledVersions.find(
                 (v) => v.abbreviation?.toLowerCase() === query.trim(),
@@ -154,13 +143,11 @@
             }
         }
 
-        // 1. Search Songs (Using Blazing Fast FTS)
         if (activeTab === "all" || activeTab === "songs") {
             const formattedSongs = songFtsResults.map((s) => ({
                 id: `song_${s.id}`,
                 type: "song",
                 title: s.title,
-                // If snippet exists, show the HTML highlight. Otherwise default to Artist.
                 subtitle: s.lyrics_snippet || s.artist || "Unknown Artist",
                 isHtml: !!s.lyrics_snippet,
                 payload: s,
@@ -168,13 +155,11 @@
             results.push(...formattedSongs);
         }
 
-        // 2. Search Bible
         if (activeTab === "all" || activeTab === "bible") {
             const regex =
                 /^(\d?\s*[a-z]+(?:[\s-]*[a-z]+)*)\s*(?:(\d+)\s*(?:[:\s]\s*(\d+))?)?$/i;
             const match = query.match(regex);
 
-            // A. Reference Navigation (e.g., "John 3 16")
             if (match) {
                 const bookQuery = match[1]?.trim().toLowerCase();
                 const matchedBooks = bibleState.books.filter((b) =>
@@ -205,7 +190,6 @@
                 }
             }
 
-            // B. FTS Phrase Results (e.g., "passed away")
             const ftsFormatted = bibleFtsResults.map((res) => ({
                 id: `bible_fts_${res.reference}`,
                 type: "bible_fts",
@@ -218,7 +202,6 @@
             results.push(...ftsFormatted);
         }
 
-        // 3. Search Media
         if (activeTab === "all" || activeTab === "media") {
             const matchedMedia = media.allMedia
                 .filter((m) => m.filename.toLowerCase().includes(query))
@@ -288,9 +271,8 @@
             bibleState.switchBibleVersionLive(result.payload.id);
         } else if (result.type === "bible_nav") {
             const { bookId, chapterNum, verseNum } = result.payload;
-            goto("/operator/bibles");
+
             if (chapterNum) {
-                // If they typed a verse, go to it and FIRE it instantly
                 await bibleState.goToReference(bookId, chapterNum, verseNum);
 
                 if (verseNum) {
@@ -298,6 +280,9 @@
                         v.reference.endsWith(`:${verseNum}`),
                     );
                     if (targetVerse) {
+                        // FIX: Explicitly pre-fetch the text before generating cue
+                        await bibleState.resolveVerseText(targetVerse.id);
+
                         const cue = await bibleState.generateChapterCue(
                             targetVerse.id,
                         );
@@ -307,15 +292,16 @@
                             `slide_${targetVerse.id}_0`,
                         );
                         goto("/operator");
+                        return;
                     }
                 }
             } else {
                 bibleState.selectBook(bookId);
             }
+            goto("/operator/bibles");
         } else if (result.type === "bible_fts") {
             const ftsItem = result.payload as FtsSearchResult;
 
-            // 1. Parse the reference from the FTS result
             const regex =
                 /^(\d?\s*[a-zA-Z]+(?:[\s-]*[a-zA-Z]+)*)\s+(\d+):(\d+)$/i;
             const match = ftsItem.reference.match(regex);
@@ -334,7 +320,6 @@
                     ) || matchedBooks[0];
 
                 if (book) {
-                    // 2. Navigate the state to this book/chapter
                     await bibleState.selectBook(book.id);
                     const targetChapter = bibleState.chapters.find(
                         (c) => c.number === chapterNum,
@@ -343,12 +328,13 @@
                     if (targetChapter) {
                         await bibleState.selectChapter(targetChapter.id);
 
-                        // 3. Generate the full chapter cue using the ACTIVE translation
                         const targetVerse = bibleState.verses.find((v) =>
                             v.reference.endsWith(`:${verseNum}`),
                         );
-
                         if (targetVerse) {
+                            // FIX: Explicitly pre-fetch the text before generating cue
+                            await bibleState.resolveVerseText(targetVerse.id);
+
                             const cue = await bibleState.generateChapterCue(
                                 targetVerse.id,
                             );
@@ -357,7 +343,6 @@
                                 `verse_${targetVerse.id}`,
                                 `slide_${targetVerse.id}_0`,
                             );
-                            await playlists.ensureActivePlaylist();
                             goto("/operator");
                         }
                     }
@@ -376,12 +361,11 @@
     }
 </script>
 
+<!-- KEEP THE REST OF THE UI EXACTLY THE SAME -->
 <div
     class="flex flex-col h-full bg-card/30 rounded-xl border border-border shadow-inner overflow-hidden"
 >
-    <!-- Header: Search Bar & Tabs -->
     <div class="p-3 border-b border-border bg-background/50 space-y-3 shrink-0">
-        <!-- Omni-Search Input -->
         <div class="relative group">
             <Search
                 size={18}
@@ -406,7 +390,6 @@
             </div>
         </div>
 
-        <!-- Filter Tabs -->
         <div class="flex items-center gap-1">
             {#each tabs as tab}
                 <button
@@ -426,7 +409,6 @@
         </div>
     </div>
 
-    <!-- Results Area -->
     <div class="flex-1 overflow-y-auto p-2 custom-scrollbar relative">
         {#if !searchQuery}
             <div
@@ -468,7 +450,6 @@
                         <div
                             class="flex items-center gap-3 overflow-hidden w-full"
                         >
-                            <!-- Type Icon / Thumbnail Container -->
                             {const safeUrl =
                                 result.type === "media"
                                     ? result.payload.asset_url ||
@@ -509,7 +490,6 @@
                                 {/if}
                             </div>
 
-                            <!-- Text Details -->
                             <div class="flex flex-col truncate flex-1">
                                 <span
                                     class="text-sm font-semibold text-zinc-200 truncate {result.type ===
@@ -520,7 +500,6 @@
                                     {result.title}
                                 </span>
                                 {#if result.isHtml}
-                                    <!-- Renders HTML for Bible AND Song FTS highlights -->
                                     <span class="text-xs text-zinc-400 truncate"
                                         >{@html result.subtitle}</span
                                     >
@@ -537,7 +516,6 @@
                             </div>
                         </div>
 
-                        <!-- Action Indicator -->
                         {#if selectedIndex === i}
                             <button
                                 class="shrink-0 px-3 py-1 bg-neon-violet text-white text-[10px] font-bold uppercase tracking-wider rounded flex items-center gap-1 shadow-lg shadow-neon-violet/20 animate-in fade-in slide-in-from-right-2"

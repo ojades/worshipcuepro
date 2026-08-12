@@ -155,8 +155,6 @@ pub fn search_bible_fts(
         return Ok(Vec::new());
     }
 
-    // Because a user might have 4 Bibles installed, we fetch extra rows
-    // to account for duplicates, then filter them down to the exact `limit` in Rust.
     let fetch_limit = limit * 4;
 
     // Notice we REMOVED the `GROUP BY reference` here so snippet() works perfectly

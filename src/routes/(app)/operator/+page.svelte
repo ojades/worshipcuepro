@@ -1,12 +1,11 @@
 <!-- src/routes/operator/+page.svelte -->
 <script lang="ts">
-    import { onMount, onDestroy } from "svelte";
+    import { onMount } from "svelte";
     import QuickFinder from "$lib/components/layout/cue/QuickFinder.svelte";
     import SlideGrid from "$lib/components/layout/cue/SlideGrid.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
     import { bibleState } from "$lib/state/bible.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
-    import { chunkProse } from "$lib/utils/helper";
     import {
         Settings2,
         Edit2,
