@@ -2,7 +2,12 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "projector_window", "stage_window", "splashscreen"],
+  "windows": [
+    "main",
+    "projector_window",
+    "stage_window",
+    "splashscreen"
+  ],
   "permissions": [
     "core:default",
     "opener:default",
@@ -23,7 +28,15 @@
     "fs:allow-read-text-file",
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "$HOME/**" }, { "path": "$DOCUMENT/**" }]
-    }
+      "allow": [
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$DOCUMENT/**"
+        }
+      ]
+    },
+    "process:default"
   ]
 }

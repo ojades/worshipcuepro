@@ -62,6 +62,7 @@ async fn broadcast_payload(
 pub fn run() {
     let http_client = Client::new();
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { .. } => {
                 if window.label() == "main" {

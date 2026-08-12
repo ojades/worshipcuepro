@@ -38,7 +38,10 @@ struct GeniusResult {
 
 /// Command 1: Search the Genius API to get song URLs
 #[tauri::command]
-pub async fn search_genius(query: String, api_key: String) -> Result<Vec<GeniusSearchResult>, String> {
+pub async fn search_genius(
+    query: String,
+    api_key: String,
+) -> Result<Vec<GeniusSearchResult>, String> {
     let client = Client::new();
 
     let res = client
@@ -77,13 +80,20 @@ pub async fn scrape_genius_lyrics(url: String) -> Result<String, String> {
     let client = Client::new();
 
     // Genius (and Cloudflare) often block requests without a standard User-Agent.
-    let res = client.get(&url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    let res = client
+        .get(&url)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        )
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;
 
-    let html = res.text().await.map_err(|e| format!("Failed to read HTML: {}", e))?;
+    let html = res
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read HTML: {}", e))?;
 
     let document = Html::parse_document(&html);
 

@@ -6,6 +6,8 @@
     import Alert from "$lib/components/layout/Alert.svelte";
     import { invoke } from "@tauri-apps/api/core";
     import { emit } from "@tauri-apps/api/event";
+    import { relaunch } from "@tauri-apps/plugin-process";
+
     import NIV from "$lib/data/bibles/NIV.json";
     import ERV from "$lib/data/bibles/ERV.json";
     import AMPC from "$lib/data/bibles/AMPC.xml?raw";
@@ -93,6 +95,8 @@
                 const newSettings = { ...settingsState.config };
                 delete newSettings.workspacePath;
                 settingsState.update(newSettings);
+
+                // Flag for restart ONLY if we migrated, so Rust connects to the new path
                 needRestart = true;
             }
 
@@ -102,6 +106,7 @@
             if (coreWorkspace) {
                 try {
                     dirExists = await exists(coreWorkspace);
+                    // (Removed the bug here that forced needRestart = true on every startup)
                 } catch (fsError) {
                     console.warn("Workspace check failed:", fsError);
                     dirExists = false;
@@ -109,16 +114,14 @@
             }
 
             if (coreWorkspace && dirExists) {
-                await updateStatus("Connecting to Database...");
-
-                await loadAppResources();
-
                 if (needRestart) {
-                    await updateStatus(
-                        "Restart the App for changes to take effect...",
-                    );
+                    await updateStatus("Applying settings...");
+                    await relaunch(); // Instantly restarts the app automatically!
                     return;
                 }
+
+                await updateStatus("Connecting to Database...");
+                await loadAppResources();
 
                 setTimeout(async () => {
                     try {
@@ -146,23 +149,17 @@
     });
 
     async function handleWorkspaceSelected(newPath: string) {
+        await updateStatus("Configuring Workspace...");
         const savePath = await settingsState.parseWorkspaceDir(newPath);
 
         // 1. Save strictly to Rust Core Config
         await setCoreWorkspaceAPI(savePath);
 
         needsSetup = false;
-        await updateStatus("Connecting to Database...");
 
-        // Note: Because Rust initialized the DB *before* this path existed,
-        // you technically need to tell Rust to reconnect to the new path, or prompt a restart.
-        // For now, prompt restart is safest:
-        alert(
-            "Workspace set! Please restart WorshipCuePro to connect to the new database.",
-        );
-
-        // Or if you want to try loading resources immediately (assuming Rust auto-reconnected via a command):
-        // await loadAppResources();
+        // Use Tauri's built-in relaunch function instead of an annoying alert
+        await updateStatus("Restarting engine...");
+        await relaunch();
     }
 </script>
 
