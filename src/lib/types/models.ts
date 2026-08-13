@@ -4,7 +4,14 @@ export const LOADING_SLIDE_TEXT = "(Loading...)";
 export interface PresentationPayload {
   liveText: string;
   nextText: string;
-  liveBackground: { url: string; type: string; playbackRate?: number } | null;
+  liveBackground: {
+    url: string;
+    type: string;
+    playbackRate?: number;
+    isMuted?: boolean;
+    isPaused?: boolean;
+    isPlaying?: boolean;
+  } | null;
   isBlackout: boolean;
   isTextCleared: boolean;
   liveReference?: string | null;

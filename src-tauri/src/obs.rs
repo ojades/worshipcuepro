@@ -47,13 +47,25 @@ pub async fn start_server(
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    println!(
-        "OBS HTTP & WebSocket Server listening on {}",
-        listener.local_addr().unwrap()
-    );
+    // FIX: Safely attempt to bind to the port without unwrapping
+    match tokio::net::TcpListener::bind("0.0.0.0:8080").await {
+        Ok(listener) => {
+            if let Ok(addr) = listener.local_addr() {
+                println!("OBS HTTP & WebSocket Server listening on {}", addr);
+            }
 
-    axum::serve(listener, app).await.unwrap();
+            // FIX: Safely run the server without unwrapping
+            if let Err(e) = axum::serve(listener, app).await {
+                eprintln!("Axum server encountered an error: {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "CRITICAL: Failed to bind to port 8080. Another application is likely using this port. Error: {}",
+                e
+            );
+        }
+    }
 }
 
 async fn static_handler(uri: Uri) -> impl IntoResponse {

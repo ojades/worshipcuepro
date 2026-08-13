@@ -62,59 +62,55 @@ async fn broadcast_payload(
 pub fn run() {
     let http_client = Client::new();
     tauri::Builder::default()
-        .plugin(tauri_plugin_process::init())
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { .. } => {
-                if window.label() == "main" {
-                    window.app_handle().exit(0);
+            .plugin(tauri_plugin_process::init())
+            .on_window_event(|window, event| match event {
+                tauri::WindowEvent::CloseRequested { .. } => {
+                    if window.label() == "main" {
+                        window.app_handle().exit(0);
+                    }
                 }
-            }
-            _ => {}
-        })
-        .manage(ApiHttpClient(http_client))
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_sql::Builder::default().build())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
-            match db::init_db(&app.handle()) {
-                            Ok(db_pool) => {
-                                app.manage(db_pool);
-                            }
-                            Err(e) => {
-                                use tauri_plugin_dialog::DialogExt;
-                                app.handle()
-                                    .dialog()
-                                    .message(format!("WorshipCuePro failed to initialize its database. Please ensure the app has folder permissions.\n\nError: {}", e))
-                                    .title("Critical Startup Error")
-                                    .kind(tauri_plugin_dialog::MessageDialogKind::Error)
-                                    .show(|_| {});
+                _ => {}
+            })
+            .manage(ApiHttpClient(http_client))
+            .plugin(tauri_plugin_fs::init())
+            .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_sql::Builder::default().build())
+            .plugin(tauri_plugin_opener::init())
+            .plugin(tauri_plugin_shell::init())
+            .setup(|app| {
+                match db::init_db(&app.handle()) {
+                    Ok(db_pool) => {
+                        app.manage(db_pool);
+                    }
+                    Err(e) => {
+                        use tauri_plugin_dialog::DialogExt;
+                        app.handle()
+                            .dialog()
+                            .message(format!("WorshipCuePro failed to initialize its database. Please ensure the app has folder permissions.\n\nError: {}", e))
+                            .title("Critical Startup Error")
+                            .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                            .blocking_show(); // <--- CRITICAL FIX: Forces the dialog to stay open so you can read it!
 
-                                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
-                            }
-                        }
-            // Create a broadcast channel with a capacity of 100 messages
-            let (tx, _rx) = broadcast::channel(100);
+                        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
+                    }
+                }
 
-            // Create the thread-safe state cache
-            let cache = Arc::new(RwLock::new(HashMap::new()));
+                let (tx, _rx) = broadcast::channel(100);
+                let cache = Arc::new(RwLock::new(HashMap::new()));
 
-            // Allow Tauri commands to access the sender and cache
-            app.manage(ServerState {
-                tx: tx.clone(),
-                cache: cache.clone(),
-            });
+                app.manage(ServerState {
+                    tx: tx.clone(),
+                    cache: cache.clone(),
+                });
 
-            // Spawn the Axum server in the background
-            let tx_clone = tx.clone();
-            let cache_clone = cache.clone();
-            tauri::async_runtime::spawn(async move {
-                obs::start_server(tx_clone, cache_clone).await;
-            });
+                let tx_clone = tx.clone();
+                let cache_clone = cache.clone();
+                tauri::async_runtime::spawn(async move {
+                    obs::start_server(tx_clone, cache_clone).await;
+                });
 
-            Ok(())
-        })
+                Ok(())
+            })
         .invoke_handler(tauri::generate_handler![
             close_splashscreen,
             commands::display::launch_projector,

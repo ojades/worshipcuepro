@@ -12,7 +12,6 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import { goto } from "$app/navigation";
-    import { chunkProse } from "$lib/utils/helper";
     import type { FtsSearchResult } from "$lib/commands/bible-db";
 
     // Local UI State
@@ -201,6 +200,28 @@
         }
     });
 
+    $effect(() => {
+        const handleVerseJump = (e: Event) => {
+            e.preventDefault();
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
+        };
+
+        const handleEscape = () => {
+            if (document.activeElement === searchInput) searchInput.blur();
+        };
+
+        window.addEventListener("shortcut-verse-jump", handleVerseJump);
+        window.addEventListener("shortcut-escape", handleEscape);
+
+        return () => {
+            window.removeEventListener("shortcut-verse-jump", handleVerseJump);
+            window.removeEventListener("shortcut-escape", handleEscape);
+        };
+    });
+
     function handleSmartInputKeydown(e: KeyboardEvent) {
         if (e.key === "Escape") {
             e.preventDefault();
@@ -306,19 +327,6 @@
         }
     }
 </script>
-
-<svelte:window
-    onshortcut-verse-jump={(e) => {
-        e.preventDefault();
-        if (searchInput) {
-            searchInput.focus();
-            searchInput.select();
-        }
-    }}
-    onshortcut-escape={() => {
-        if (document.activeElement === searchInput) searchInput.blur();
-    }}
-/>
 
 <div class="flex-1 flex min-h-0 bg-zinc-950">
     <!-- LEFT PANE: Navigation -->

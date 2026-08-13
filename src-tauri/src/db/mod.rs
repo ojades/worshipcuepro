@@ -67,8 +67,11 @@ pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
     Ok(pool)
 }
 
-fn run_migrations(pool: &DbPool) -> rusqlite::Result<()> {
-    let conn = pool.get().unwrap();
+fn run_migrations(pool: &DbPool) -> Result<(), String> {
+    // FIX: Remove unwrap, bubble the error gracefully
+    let conn = pool
+        .get()
+        .map_err(|e| format!("Failed to connect to DB for migrations: {}", e))?;
 
     conn.execute_batch(
         "
@@ -136,17 +139,16 @@ fn run_migrations(pool: &DbPool) -> rusqlite::Result<()> {
             version UNINDEXED,   -- Don't index the version ID, just use it for filtering
             reference,
             text,
-            tokenize='unicode61' -- Handles standard punctuation and case-insensitivity flawlessly
+            tokenize='unicode61'
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS songs_fts USING fts5(
-                    id UNINDEXED,
-                    title,
-                    artist,
-                    raw_lyrics,
-                    tokenize='unicode61'
-                );
-
+            id UNINDEXED,
+            title,
+            artist,
+            raw_lyrics,
+            tokenize='unicode61'
+        );
 
         DROP TRIGGER IF EXISTS songs_ai;
         DROP TRIGGER IF EXISTS songs_ad;
@@ -167,14 +169,17 @@ fn run_migrations(pool: &DbPool) -> rusqlite::Result<()> {
             WHERE id = old.id;
         END;
         ",
-    )?;
+    )
+    .map_err(|e| format!("Execute batch failed: {}", e))?;
+
     Ok(())
 }
 
-/// Silently backfills the SQLite FTS5 table with existing Bible translations.
-/// This runs instantly in memory and only triggers if a translation is missing from the index.
-fn auto_migrate_fts(pool: &DbPool) -> rusqlite::Result<()> {
-    let mut conn = pool.get().unwrap();
+fn auto_migrate_fts(pool: &DbPool) -> Result<(), String> {
+    // FIX: Remove unwrap
+    let mut conn = pool
+        .get()
+        .map_err(|e| format!("Failed to connect to DB for FTS migration: {}", e))?;
 
     let songs_fts_count: i32 = conn
         .query_row("SELECT COUNT(*) FROM songs_fts", [], |r| r.get(0))
@@ -185,11 +190,10 @@ fn auto_migrate_fts(pool: &DbPool) -> rusqlite::Result<()> {
 
     if songs_count > 0 && songs_fts_count == 0 {
         println!("[WorshipCuePro] Backfilling FTS index for Songs...");
-        // This transfers 1,000s of songs in ~20 milliseconds
         conn.execute(
-                "INSERT INTO songs_fts(id, title, artist, raw_lyrics) SELECT id, title, artist, raw_lyrics FROM songs",
-                []
-            )?;
+            "INSERT INTO songs_fts(id, title, artist, raw_lyrics) SELECT id, title, artist, raw_lyrics FROM songs",
+            []
+        ).map_err(|e| e.to_string())?;
     }
 
     let versions_json: Option<String> = conn
@@ -198,7 +202,8 @@ fn auto_migrate_fts(pool: &DbPool) -> rusqlite::Result<()> {
             [],
             |row| row.get(0),
         )
-        .optional()?;
+        .optional()
+        .map_err(|e| e.to_string())?;
 
     let versions_json = match versions_json {
         Some(json) => json,
@@ -209,58 +214,56 @@ fn auto_migrate_fts(pool: &DbPool) -> rusqlite::Result<()> {
 
     for v in versions {
         if let Some(version_id) = v.get("id").and_then(|id| id.as_str()) {
-            // Check if this version is already in the FTS table
             let is_indexed: Option<i32> = conn
                 .query_row(
                     "SELECT 1 FROM bible_fts WHERE version = ? LIMIT 1",
                     [version_id],
                     |row| row.get(0),
                 )
-                .optional()?;
+                .optional()
+                .map_err(|e| e.to_string())?;
 
-            // If it's missing, we need to migrate it!
             if is_indexed.is_none() {
                 println!(
                     "[WorshipCuePro] Backfilling FTS index for existing Bible: {}",
                     version_id
                 );
 
-                // Open a fast transaction for the bulk insert
-                let tx = conn.transaction()?;
+                let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-                // Extract all verse blocks from the cache for this specific version
                 let like_pattern = format!("verses_{}_%", version_id);
-                let mut stmt = tx.prepare("SELECT data FROM bible_cache WHERE cache_key LIKE ?")?;
+                let mut stmt = tx
+                    .prepare("SELECT data FROM bible_cache WHERE cache_key LIKE ?")
+                    .map_err(|e| e.to_string())?;
 
                 let verse_arrays: Vec<String> = stmt
-                    .query_map([&like_pattern], |row| row.get(0))?
+                    .query_map([&like_pattern], |row| row.get(0))
+                    .map_err(|e| e.to_string())?
                     .filter_map(Result::ok)
                     .collect();
 
                 let mut insert_stmt = tx
-                    .prepare("INSERT INTO bible_fts (version, reference, text) VALUES (?, ?, ?)")?;
+                    .prepare("INSERT INTO bible_fts (version, reference, text) VALUES (?, ?, ?)")
+                    .map_err(|e| e.to_string())?;
 
                 for arr_json in verse_arrays {
-                    // Each chunk is an array of verses stored as JSON
                     let verses: Vec<serde_json::Value> =
                         serde_json::from_str(&arr_json).unwrap_or_default();
                     for verse in verses {
-                        // Extract text safely. If it's a valid verse with text, insert it.
                         if let (Some(reference), Some(text)) = (
                             verse.get("reference").and_then(|r| r.as_str()),
                             verse.get("text").and_then(|t| t.as_str()),
                         ) {
-                            insert_stmt.execute((version_id, reference, text))?;
+                            insert_stmt
+                                .execute((version_id, reference, text))
+                                .map_err(|e| e.to_string())?;
                         }
                     }
                 }
 
-                // Close statements before committing the transaction
                 drop(insert_stmt);
                 drop(stmt);
-                tx.commit()?;
-
-                println!("[WorshipCuePro] FTS backfill complete for {}", version_id);
+                tx.commit().map_err(|e| e.to_string())?;
             }
         }
     }
