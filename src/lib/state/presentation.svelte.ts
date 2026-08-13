@@ -19,11 +19,16 @@ export class PresentationState {
   isBlackout = $state(false);
   isTextCleared = $state(false);
   isBackgroundCleared = $state(false);
+
+  // --- UNIFIED MEDIA STATE ---
   currentBackground = $state<{
     url: string;
     type: string;
-    playbackRate?: number;
+    playbackRate: number;
+    isMuted: boolean;
+    isPlaying: boolean;
   } | null>(null);
+
   linesPerSlide = $state<number>(settingsState.config?.linesPerSlide || 0);
   projectorConfig = $state<DisplayConfig | null>({
     textScale: settingsState.config.projector?.textScale,
@@ -47,8 +52,6 @@ export class PresentationState {
   // -------------------------
   // Derived State
   // -------------------------
-
-  // True if we are currently showing a temporary overlay cue
   isOverlayActive = $derived(this.stashedCue !== null);
 
   allSlidesInCue = $derived(
@@ -74,17 +77,9 @@ export class PresentationState {
       : "",
   );
 
-  // Derive the reference if it exists on the slide (for Bible cues)
   currentReference = $derived(
     this.currentSlideIndex !== -1
       ? this.allSlidesInCue[this.currentSlideIndex].reference || null
-      : null,
-  );
-
-  // Extract media payload if the slide contains foreground media
-  rawCurrentMedia = $derived(
-    this.currentSlideIndex !== -1
-      ? this.allSlidesInCue[this.currentSlideIndex].media || null
       : null,
   );
 
@@ -100,10 +95,6 @@ export class PresentationState {
     this.isBlackout || this.isTextCleared ? null : this.currentReference,
   );
 
-  liveMedia = $derived(
-    this.isBlackout || this.isTextCleared ? null : this.rawCurrentMedia,
-  );
-
   liveBackground = $derived(
     this.isBlackout || this.isBackgroundCleared ? null : this.currentBackground,
   );
@@ -116,7 +107,6 @@ export class PresentationState {
     console.log("[Operator] Presentation state initialized. Listening...");
     try {
       await listen("request-presentation-state", () => {
-        console.log("Received Presentation-state request");
         this.broadcastState();
       });
     } catch (err) {
@@ -124,7 +114,6 @@ export class PresentationState {
     }
   }
 
-  // Helper method to handle the actual cue swapping logic
   private _applyCue(
     cue: any,
     targetSectionId?: string,
@@ -135,10 +124,22 @@ export class PresentationState {
     if (isSameCue && cue.type !== "bible") {
       cue.sections = this.activeCue!.sections;
     } else if (cue.type === "media") {
-      // --- Safely fallback to converting the raw filepath if asset_url is missing ---
+      // Unify: Treat Media Cues as Global Backgrounds
       const safeUrl =
         cue.asset_url || (cue.filepath ? convertFileSrc(cue.filepath) : "");
 
+      this.currentBackground = {
+        url: safeUrl,
+        type: cue.media_type || cue.type || "image",
+        isMuted: true, // Muted by default
+        isPlaying: true,
+        playbackRate: 1.0,
+      };
+
+      this.isBackgroundCleared = false;
+      this.isTextCleared = true; // Auto-clear text so the media is fully visible
+
+      // We still populate the slide data so the SlideGrid UI can preview it
       cue.sections = [
         {
           id: `media-sec-${cue.id}`,
@@ -179,18 +180,15 @@ export class PresentationState {
       this.activeSlideId = cue.sections[0]?.slides[0]?.id || null;
     }
 
-    this.isTextCleared = false;
     this.broadcastState();
   }
 
-  // Standard fire: Clears any active overlay and fires the main cue
   fire(cue: any, targetSectionId?: string, targetSlideId?: string) {
     this.stashedCue = null;
     this.stashedSlideId = null;
     this._applyCue(cue, targetSectionId, targetSlideId);
   }
 
-  // Overlay fire: Stashes the current cue (if not already stashed) and fires temporarily
   fireOverlay(cue: any, targetSectionId?: string, targetSlideId?: string) {
     if (this.activeCue && !this.stashedCue) {
       this.stashedCue = this.activeCue;
@@ -199,15 +197,12 @@ export class PresentationState {
     this._applyCue(cue, targetSectionId, targetSlideId);
   }
 
-  // Restores the stashed cue back to the active position
   dismissOverlay() {
     if (this.stashedCue) {
       this.activeCue = this.stashedCue;
       this.activeSlideId = this.stashedSlideId;
-
       this.stashedCue = null;
       this.stashedSlideId = null;
-
       this.broadcastState();
     }
   }
@@ -215,12 +210,8 @@ export class PresentationState {
   recalculateLayout() {
     const cue = this.activeCue as any;
     if (!cue) return;
-
-    // Favor cue-specific lines (Songs) or fallback to Global (Bibles)
     const lines =
       cue.lines_per_slide ?? settingsState.config.linesPerSlide ?? 0;
-
-    // THE GOLDEN RULE: Projector is the absolute source of truth
     const fontScale = settingsState.config.projector?.textScale ?? 1.0;
 
     const currentSectionIndex = cue.sections?.findIndex((s: any) =>
@@ -229,13 +220,11 @@ export class PresentationState {
 
     if (cue.type === "bible" && cue.sections) {
       cue.sections = cue.sections.map((section: any) => {
-        // Re-flatten the text and apply the new mathematical chunk limits
         const fullText = section.slides
           .map((s: any) => s.text)
           .join(" ")
           .replace(/\s+/g, " ");
         const chunks = chunkProse(fullText, lines, fontScale);
-
         return {
           ...section,
           slides: chunks.map((chunkText: string, i: number) => ({
@@ -251,24 +240,19 @@ export class PresentationState {
       return;
     }
 
-    // Keep the operator on the same relative section they were viewing
     if (currentSectionIndex !== -1 && cue.sections[currentSectionIndex]) {
       this.activeSlideId =
         cue.sections[currentSectionIndex].slides[0]?.id || null;
     } else {
       this.activeSlideId = cue.sections[0]?.slides[0]?.id || null;
     }
-
     this.broadcastState();
   }
 
-  // Renamed from updateSongLayout to handle Bibles as well
   updateCueLayout(lines: number) {
     const cue = this.activeCue as any;
     if (!cue) return;
-
     cue.lines_per_slide = lines;
-
     if (cue.raw_lyrics !== undefined) {
       songsState.update(cue.id, {
         title: cue.title,
@@ -277,19 +261,15 @@ export class PresentationState {
         raw_lyrics: cue.raw_lyrics,
       });
     }
-
     this.recalculateLayout();
   }
 
   async updateSongLyrics(newLyrics: string) {
     const cue = this.activeCue as any;
     if (!cue || cue.raw_lyrics === undefined) return;
-
     const currentIndex = this.currentSlideIndex;
-
     cue.raw_lyrics = newLyrics;
     cue.sections = parseLyrics(newLyrics, cue.lines_per_slide || 0);
-
     const newFlatSlides = cue.sections.flatMap((s: any) => s.slides);
 
     if (newFlatSlides.length > 0) {
@@ -301,7 +281,6 @@ export class PresentationState {
     } else {
       this.activeSlideId = null;
     }
-
     this.broadcastState();
 
     await songsState.update(cue.id, {
@@ -318,7 +297,6 @@ export class PresentationState {
       this.currentSlideIndex + 1 < this.allSlidesInCue.length
     ) {
       this.activeSlideId = this.allSlidesInCue[this.currentSlideIndex + 1].id;
-      this.isTextCleared = false;
       this.broadcastState();
     }
   }
@@ -326,7 +304,6 @@ export class PresentationState {
   prevSlide() {
     if (this.currentSlideIndex > 0) {
       this.activeSlideId = this.allSlidesInCue[this.currentSlideIndex - 1].id;
-      this.isTextCleared = false;
       this.broadcastState();
     }
   }
@@ -334,14 +311,11 @@ export class PresentationState {
   nextSection() {
     if (!this.activeCue || !this.activeCue.sections) return;
     const sections = this.activeCue.sections;
-
     const currentSecIndex = sections.findIndex((sec: any) =>
       sec.slides.some((s: any) => s.id === this.activeSlideId),
     );
-
     if (currentSecIndex !== -1 && currentSecIndex + 1 < sections.length) {
       this.activeSlideId = sections[currentSecIndex + 1].slides[0]?.id || null;
-      this.isTextCleared = false;
       this.broadcastState();
     }
   }
@@ -349,14 +323,11 @@ export class PresentationState {
   prevSection() {
     if (!this.activeCue || !this.activeCue.sections) return;
     const sections = this.activeCue.sections;
-
     const currentSecIndex = sections.findIndex((sec: any) =>
       sec.slides.some((s: any) => s.id === this.activeSlideId),
     );
-
     if (currentSecIndex > 0) {
       this.activeSlideId = sections[currentSecIndex - 1].slides[0]?.id || null;
-      this.isTextCleared = false;
       this.broadcastState();
     }
   }
@@ -371,12 +342,40 @@ export class PresentationState {
     this.broadcastState();
   }
 
+  // --- NEW MEDIA CONTROL METHODS ---
   setBackground(url: string, type: string) {
-    this.currentBackground = { url, type };
+    this.currentBackground = {
+      url,
+      type,
+      isMuted: true,
+      isPlaying: true,
+      playbackRate: 1.0,
+    };
     if (this.isBackgroundCleared) {
       this.isBackgroundCleared = false;
     }
     this.broadcastState();
+  }
+
+  toggleMediaPlay() {
+    if (this.currentBackground) {
+      this.currentBackground.isPlaying = !this.currentBackground.isPlaying;
+      this.broadcastState();
+    }
+  }
+
+  toggleMediaMute() {
+    if (this.currentBackground) {
+      this.currentBackground.isMuted = !this.currentBackground.isMuted;
+      this.broadcastState();
+    }
+  }
+
+  setMediaSpeed(rate: number) {
+    if (this.currentBackground) {
+      this.currentBackground.playbackRate = rate;
+      this.broadcastState();
+    }
   }
 
   clearActiveCue() {
@@ -384,23 +383,17 @@ export class PresentationState {
     this.activeSlideId = null;
     this.stashedCue = null;
     this.stashedSlideId = null;
-
-    // this.isBlackout = false;
     this.isTextCleared = true;
     this.isBackgroundCleared = false;
-    // this.currentBackground = null;
-
     this.broadcastState();
   }
 
   public async broadcastState() {
-    console.log("Broadcasting request", this.liveText);
     const payload: PresentationPayload = {
       liveText: this.liveText,
       nextText: this.liveNextText,
       liveReference: this.liveReference,
       liveBackground: this.liveBackground,
-      liveMedia: this.liveMedia,
       isBlackout: this.isBlackout,
       isTextCleared: this.isTextCleared,
       linesPerSlide: this.linesPerSlide || settingsState.config?.linesPerSlide,
@@ -443,10 +436,9 @@ export class PresentationState {
 
     try {
       await emit("presentation-update", payload);
-
       await invoke("broadcast_payload", {
         eventType: "presentation-update",
-        payload: payload,
+        payload,
       });
       await invoke("broadcast_payload", {
         eventType: "obs-update",

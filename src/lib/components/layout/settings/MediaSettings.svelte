@@ -14,7 +14,6 @@
 
     let newCategoryName = $state("");
 
-    // Inline Edit State
     let editingCat = $state<string | null>(null);
     let editName = $state("");
 
@@ -63,6 +62,13 @@
             await media.deleteCategory(deletingCat, fallbackCat);
         }
         deletingCat = null;
+    }
+
+    function focusInput(node: HTMLInputElement) {
+        setTimeout(() => {
+            node.focus();
+            // node.select();
+        }, 10);
     }
 </script>
 
@@ -132,12 +138,12 @@
                             <input
                                 type="text"
                                 bind:value={editName}
+                                use:focusInput
                                 onkeydown={(e) => {
                                     if (e.key === "Enter") saveEdit();
                                     if (e.key === "Escape") editingCat = null;
                                 }}
                                 class="flex-1 bg-zinc-900 border border-violet-500 rounded-md px-3 py-1.5 text-sm text-zinc-100 outline-none"
-                                autofocus
                             />
                         {:else}
                             <div class="flex flex-col gap-1">

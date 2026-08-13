@@ -12,9 +12,18 @@
             target.tagName === "TEXTAREA" ||
             target.isContentEditable;
 
-        // --- NEW: Prevent Backspace from navigating history ---
-        if (e.key === "Backspace" && !isInput) {
-            e.preventDefault();
+        // --- Prevent Backspace & History Navigation from ruining the show ---
+        if (!isInput) {
+            if (e.key === "Backspace") {
+                e.preventDefault();
+            }
+            // Block Cmd+Left, Cmd+Right, Alt+Left, Alt+Right to prevent browser history back/forward
+            if (
+                (e.metaKey || e.altKey) &&
+                (e.key === "ArrowLeft" || e.key === "ArrowRight")
+            ) {
+                e.preventDefault();
+            }
         }
 
         if (checkShortcut(e, SHORTCUTS.SAVE_EDIT)) {
@@ -32,7 +41,7 @@
             return;
         }
 
-        // --- NEW: Sidebar Navigation ---
+        // --- Sidebar Navigation ---
         if (checkShortcut(e, SHORTCUTS.NAV_CUES)) {
             e.preventDefault();
             goto("/operator");
@@ -97,6 +106,54 @@
         } else if (checkShortcut(e, SHORTCUTS.PREV_SECTION)) {
             e.preventDefault();
             presentation.prevSection();
+        }
+
+        // --- NEW: Jump to First/Last slide or section ---
+        else if (
+            checkShortcut(e, SHORTCUTS.FIRST_SECTION) ||
+            checkShortcut(e, SHORTCUTS.LAST_SECTION) ||
+            checkShortcut(e, SHORTCUTS.FIRST_SLIDE_SECTION) ||
+            checkShortcut(e, SHORTCUTS.LAST_SLIDE_SECTION)
+        ) {
+            e.preventDefault();
+            const cue: any = presentation.activeCue;
+
+            if (cue?.sections?.length) {
+                let targetSecIndex = 0;
+                let targetSlideIndex = 0;
+
+                // Find index of currently active section
+                let currentSecIndex = cue.sections.findIndex((s: any) =>
+                    s.slides.some(
+                        (sl: any) => sl.id === presentation.activeSlideId,
+                    ),
+                );
+                if (currentSecIndex === -1) currentSecIndex = 0;
+
+                if (checkShortcut(e, SHORTCUTS.FIRST_SECTION)) {
+                    targetSecIndex = 0;
+                    targetSlideIndex = 0;
+                } else if (checkShortcut(e, SHORTCUTS.LAST_SECTION)) {
+                    targetSecIndex = cue.sections.length - 1;
+                    targetSlideIndex = 0; // Jump to the beginning of the last section
+                } else if (checkShortcut(e, SHORTCUTS.FIRST_SLIDE_SECTION)) {
+                    targetSecIndex = currentSecIndex;
+                    targetSlideIndex = 0;
+                } else if (checkShortcut(e, SHORTCUTS.LAST_SLIDE_SECTION)) {
+                    targetSecIndex = currentSecIndex;
+                    targetSlideIndex =
+                        cue.sections[currentSecIndex].slides.length - 1;
+                }
+
+                const sec = cue.sections[targetSecIndex];
+                if (sec?.slides?.length) {
+                    presentation.fire(
+                        cue,
+                        sec.id,
+                        sec.slides[targetSlideIndex].id,
+                    );
+                }
+            }
         }
 
         // 5. Operator View Custom Events

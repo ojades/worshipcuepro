@@ -1,15 +1,27 @@
-<!-- /src/lib/components/layout/settings/RemoteDisplay.svelte -->
+<!-- src/lib/components/layout/settings/RemoteDisplay.svelte -->
 <script lang="ts">
     import { onMount } from "svelte";
     import { getNetworkUrls, type NetworkUrls } from "$lib/utils/helper";
+    import { RefreshCw } from "@lucide/svelte";
 
     let urls = $state<NetworkUrls | null>(null);
     let copiedObs = $state(false);
     let copiedStage = $state(false);
+    let isRefreshing = $state(false);
 
     onMount(async () => {
         urls = await getNetworkUrls();
     });
+
+    // --- NEW: Refresh Function ---
+    async function refreshUrls() {
+        isRefreshing = true;
+        urls = await getNetworkUrls();
+
+        setTimeout(() => {
+            isRefreshing = false;
+        }, 500);
+    }
 
     async function copyToClipboard(text: string, target: "obs" | "stage") {
         try {
@@ -29,7 +41,20 @@
 </script>
 
 <div class="max-w-2xl animate-in fade-in duration-300">
-    <h1 class="text-2xl font-bold text-foreground mb-2">Remote Display</h1>
+    <!-- Flex container to align title and refresh button -->
+    <div class="flex items-center justify-between mb-2">
+        <h1 class="text-2xl font-bold text-foreground">Remote Display</h1>
+
+        <button
+            onclick={refreshUrls}
+            disabled={isRefreshing}
+            class="flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors p-2 rounded-md hover:bg-muted/50 disabled:opacity-50"
+        >
+            <RefreshCw size={14} class={isRefreshing ? "animate-spin" : ""} />
+            Refresh IPs
+        </button>
+    </div>
+
     <p class="text-sm text-muted-foreground mb-6">
         Connect external devices on your local network to WorshipCuePro.
     </p>

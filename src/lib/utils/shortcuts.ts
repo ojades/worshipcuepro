@@ -23,6 +23,20 @@ export const SHORTCUTS = {
   NEXT_SECTION: { key: "ArrowDown", description: "Next Section" },
   PREV_SECTION: { key: "ArrowUp", description: "Previous Section" },
 
+  // NEW: Quick Jumps (Using Cmd/Ctrl + Arrows for universal keyboard compatibility)
+  FIRST_SECTION: { key: "ArrowUp", ctrl: true, description: "First Section" },
+  LAST_SECTION: { key: "ArrowDown", ctrl: true, description: "Last Section" },
+  FIRST_SLIDE_SECTION: {
+    key: "ArrowLeft",
+    ctrl: true,
+    description: "First Slide in Section",
+  },
+  LAST_SLIDE_SECTION: {
+    key: "ArrowRight",
+    ctrl: true,
+    description: "Last Slide in Section",
+  },
+
   // Sidebar Navigation
   NAV_CUES: { key: "1", ctrl: true, description: "Go to Cues" },
   NAV_LYRICS: { key: "2", ctrl: true, description: "Go to Lyrics" },

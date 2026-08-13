@@ -1,7 +1,6 @@
 <!-- src/routes/(app)/+layout.svelte -->
 <script lang="ts">
     import { onMount } from "svelte";
-    import { initDB } from "$lib/db";
     import { settingsState } from "$lib/state/settings.svelte";
     import Alert from "$lib/components/layout/Alert.svelte";
     import { invoke } from "@tauri-apps/api/core";
@@ -79,10 +78,8 @@
     onMount(async () => {
         try {
             let needRestart = false;
-            // 1. Check Rust for the definitive Core Workspace path
             let coreWorkspace = await getCoreWorkspaceAPI();
 
-            // 2. MIGRATION: If Rust has no workspace, but localStorage does, migrate it.
             const legacyWorkspace = settingsState.config?.workspacePath;
 
             if (!coreWorkspace && legacyWorkspace) {
@@ -96,7 +93,6 @@
                 delete newSettings.workspacePath;
                 settingsState.update(newSettings);
 
-                // Flag for restart ONLY if we migrated, so Rust connects to the new path
                 needRestart = true;
             }
 
@@ -106,7 +102,6 @@
             if (coreWorkspace) {
                 try {
                     dirExists = await exists(coreWorkspace);
-                    // (Removed the bug here that forced needRestart = true on every startup)
                 } catch (fsError) {
                     console.warn("Workspace check failed:", fsError);
                     dirExists = false;
@@ -116,7 +111,7 @@
             if (coreWorkspace && dirExists) {
                 if (needRestart) {
                     await updateStatus("Applying settings...");
-                    await relaunch(); // Instantly restarts the app automatically!
+                    await relaunch();
                     return;
                 }
 
@@ -152,24 +147,23 @@
         await updateStatus("Configuring Workspace...");
         const savePath = await settingsState.parseWorkspaceDir(newPath);
 
-        // 1. Save strictly to Rust Core Config
         await setCoreWorkspaceAPI(savePath);
 
         needsSetup = false;
 
-        // Use Tauri's built-in relaunch function instead of an annoying alert
         await updateStatus("Restarting engine...");
         await relaunch();
     }
 </script>
 
+<!--
 <svelte:window
     oncontextmenu={(e) => {
         if (!dev) {
             e.preventDefault();
         }
     }}
-/>
+/> -->
 
 {#if needsSetup}
     <OnboardingSetup onComplete={handleWorkspaceSelected} />
@@ -178,7 +172,6 @@
     <Alert />
     <GlobalShortcuts />
 {:else}
-    <!-- This visually mimics the Tauri splash screen for when we load during onboarding -->
     <div
         class="h-screen w-screen flex flex-col items-center justify-center bg-[#09090b] text-white"
     >

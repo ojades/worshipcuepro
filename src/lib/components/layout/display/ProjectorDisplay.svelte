@@ -1,4 +1,4 @@
-<!-- /src/lib/components/layout/display/ProjectorDisplay.svelte -->
+<!-- src/lib/components/layout/display/ProjectorDisplay.svelte -->
 <script lang="ts">
     import { settingsState } from "$lib/state/settings.svelte";
     import type {
@@ -6,6 +6,7 @@
         TextFormatConfig,
     } from "$lib/types/models";
     import { onMount, onDestroy } from "svelte";
+    import { listen } from "@tauri-apps/api/event";
 
     export interface ExtendedPayload extends PresentationPayload {
         liveReference?: string | null;
@@ -28,7 +29,6 @@
     }>();
 
     // Convert formatting config to standard CSS variables
-    // We multiply the payload's textScale by the global settings fontSizeScale
     let styleString = $derived(`
             --font-family: "${display.projector?.textFormat?.fontFamily ?? "sans-serif"}", sans-serif;
             --text-transform: ${display.projector?.textFormat?.textTransform ?? "uppercase"};
@@ -82,34 +82,37 @@
         }
     });
 
-    let mediaPaddingClass = $derived(!display.liveMedia?.url ? "cq-px" : "");
-
-    // --- Ticker Logic for Timers ---
     let serviceTimerText = $state("");
     let speakerTimerText = $state("");
     let isSpeakerOverrun = $state(false);
     let timerInterval: ReturnType<typeof setInterval>;
+    let bgVideoNode: HTMLVideoElement | null = $state(null);
 
-    function setPlaybackRate(node: HTMLVideoElement, rate?: number) {
-        node.playbackRate = rate ?? 1.0;
-        return {
-            update(newRate?: number) {
-                node.playbackRate = newRate ?? 1.0;
-            },
-        };
-    }
+    // --- Media Controller Effect ---
+    $effect(() => {
+        if (bgVideoNode && display.liveBackground) {
+            bgVideoNode.muted = display.liveBackground.isMuted ?? true;
+            bgVideoNode.playbackRate =
+                display.liveBackground.playbackRate ?? 1.0;
+
+            if (display.liveBackground.isPlaying && bgVideoNode.paused) {
+                bgVideoNode.play().catch(() => {});
+            } else if (
+                !display.liveBackground.isPlaying &&
+                !bgVideoNode.paused
+            ) {
+                bgVideoNode.pause();
+            }
+        }
+    });
 
     function seamlessLoop(node: HTMLVideoElement) {
         const onTimeUpdate = () => {
-            // If we are within 0.15 seconds of the end, hijack the loop
             if (node.duration && node.currentTime >= node.duration - 0.15) {
-                // Seek to 0.01 instead of 0 to prevent the decoder from stalling on the first keyframe
                 node.currentTime = 0.01;
             }
         };
-
         node.addEventListener("timeupdate", onTimeUpdate);
-
         return {
             destroy() {
                 node.removeEventListener("timeupdate", onTimeUpdate);
@@ -130,14 +133,10 @@
     onMount(() => {
         timerInterval = setInterval(() => {
             const now = Date.now();
-
-            // Service Timer
             if (display.serviceTargetTimestamp) {
                 const diff = display.serviceTargetTimestamp - now;
                 serviceTimerText = diff <= 0 ? "00:00" : formatTime(diff);
             }
-
-            // Speaker Timer
             if (
                 display.speakerTargetTimestamp !== null &&
                 display.speakerTargetTimestamp !== undefined
@@ -153,10 +152,16 @@
                 speakerTimerText = formatTime(display.speakerPausedRemainingMs);
             }
         }, 200);
-    });
 
-    onDestroy(() => {
-        clearInterval(timerInterval);
+        // Listen for scrub commands from Operator
+        const unlistenSeek = listen("media-seek", (e) => {
+            if (bgVideoNode) bgVideoNode.currentTime = e.payload as number;
+        });
+
+        return () => {
+            clearInterval(timerInterval);
+            unlistenSeek.then((f) => f());
+        };
     });
 </script>
 
@@ -165,19 +170,16 @@
     class:opacity-0={display.isBlackout}
     style={styleString}
 >
-    <!-- 1. Background Layer -->
+    <!-- 1. Background Layer (UNIFIED MEDIA) -->
     {#if display.liveBackground}
         {#if display.liveBackground.type === "video"}
             {#key display.liveBackground.url}
                 <video
+                    bind:this={bgVideoNode}
                     src={display.liveBackground.url}
-                    use:setPlaybackRate={display.liveBackground.playbackRate ??
-                        1.0}
                     use:seamlessLoop
                     class="absolute inset-0 w-full h-full object-cover z-0"
-                    autoplay
                     loop
-                    muted
                 ></video>
             {/key}
         {:else}
@@ -189,37 +191,15 @@
         {/if}
     {/if}
 
-    <!-- 2. Main Text / Media Layer -->
+    <!-- 2. Main Text Layer -->
     <div
-        class="absolute inset-0 z-10 flex flex-col {mediaPaddingClass} transition-opacity duration-300 {alignmentClass} {horizontalAlignmentClass}"
+        class="absolute inset-0 z-10 flex flex-col cq-px transition-opacity duration-300 {alignmentClass} {horizontalAlignmentClass}"
         class:opacity-0={display.isTextCleared}
     >
         <div
             class="relative flex-col w-full flex justify-center {horizontalAlignmentClass}"
         >
-            <!-- Foreground Media Handling -->
-            {#if display.liveMedia}
-                {#if display.liveMedia.type === "video"}
-                    {#key display.liveMedia?.url}
-                        <!-- svelte-ignore a11y_media_has_caption -->
-                        <video
-                            src={display.liveMedia.url}
-                            use:setPlaybackRate={display.liveMedia
-                                .playbackRate ?? 1.0}
-                            class="absolute inset-0 w-full h-screen object-cover z-10"
-                            autoplay
-                        ></video>
-                    {/key}
-                {:else}
-                    <img
-                        src={display.liveMedia.url}
-                        alt="Media Presentation"
-                        class="w-full max-h-[90cqh] object-contain drop-shadow-2xl z-10"
-                    />
-                {/if}
-
-                <!-- Standard Text Handling -->
-            {:else if display.liveText}
+            {#if display.liveText}
                 <p
                     class="slide-text text-white cq-pb-offset whitespace-pre-wrap"
                 >
@@ -227,7 +207,6 @@
                 </p>
             {/if}
 
-            <!-- Bible Reference Layer -->
             {#if display.liveReference}
                 <div
                     class="absolute z-20 transition-opacity duration-300 {referencePositionClass}"
@@ -240,7 +219,7 @@
         </div>
     </div>
 
-    <!-- 3. Alert Message Layer (Routed to Projector) -->
+    <!-- 3. Alert Message Layer -->
     {#if display.showMessageOnProjector && display.stageMessage}
         <div
             class="absolute top-[8cqh] inset-x-0 z-50 flex items-center justify-center animate-in slide-in-from-top duration-500"
@@ -256,7 +235,7 @@
         </div>
     {/if}
 
-    <!-- 4. Timers Layer (Routed to Projector) -->
+    <!-- 4. Timers Layer -->
     {#if (display.showServiceTimerOnProjector || display.showSpeakerTimerOnProjector) && (display.serviceTargetTimestamp || display.speakerTargetTimestamp)}
         <div
             class="absolute inset-0 z-40 flex flex-col gap-[4cqh] items-center justify-center bg-black/60 backdrop-blur-xs animate-in fade-in duration-500"
@@ -300,7 +279,6 @@
     .display-container {
         container-type: size;
     }
-
     .slide-text {
         font-family: var(--font-family);
         text-transform: var(--text-transform);
@@ -308,25 +286,19 @@
         letter-spacing: var(--letter-spacing);
         line-height: var(--line-height);
         text-align: var(--text-align);
-
         font-size: calc(3cqw * var(--font-scale));
-
         -webkit-text-stroke: var(--stroke-width) var(--stroke-color);
         paint-order: stroke fill;
         filter: var(--drop-shadow);
     }
-
     .slide-reference {
         font-family: var(--font-family);
         font-weight: var(--font-weight);
-
         font-size: calc(3cqw * var(--font-scale));
-
         -webkit-text-stroke: calc(var(--stroke-width) * 0.5) var(--stroke-color);
         paint-order: stroke fill;
         filter: var(--drop-shadow);
     }
-
     .cq-px {
         padding-left: 5cqw;
         padding-right: 5cqw;

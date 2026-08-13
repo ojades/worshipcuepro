@@ -35,12 +35,12 @@
             icon: Film,
             shortcut: SHORTCUTS.NAV_MEDIA,
         },
-        {
-            id: "shoots" as const,
-            label: "Shoots",
-            icon: MonitorPlay,
-            shortcut: SHORTCUTS.NAV_SHOOTS,
-        },
+        // {
+        //     id: "shoots" as const,
+        //     label: "Shoots",
+        //     icon: MonitorPlay,
+        //     shortcut: SHORTCUTS.NAV_SHOOTS,
+        // },
         {
             id: "settings" as const,
             label: "Settings",
