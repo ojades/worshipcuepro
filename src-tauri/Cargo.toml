@@ -29,7 +29,7 @@ tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
 futures-util = "0.3"
 tower-http = { version = "0.5", features = ["fs", "cors"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 local-ip-address = "0.6"
 scraper = "0.18"
 tauri-plugin-shell = "2.3.5"
@@ -40,3 +40,4 @@ r2d2 = "0.8.10"
 r2d2_sqlite = "0.24.0"
 uuid = { version = "1.8.0", features = ["v4", "fast-rng"] }
 tauri-plugin-process = "2"
+rusty_ytdl = { version = "0.7.4", features = ["rustls-tls"] }

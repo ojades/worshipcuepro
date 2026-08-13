@@ -78,8 +78,22 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let db_pool = db::init_db(&app.handle()).unwrap();
-            app.manage(db_pool);
+            match db::init_db(&app.handle()) {
+                            Ok(db_pool) => {
+                                app.manage(db_pool);
+                            }
+                            Err(e) => {
+                                use tauri_plugin_dialog::DialogExt;
+                                app.handle()
+                                    .dialog()
+                                    .message(format!("WorshipCuePro failed to initialize its database. Please ensure the app has folder permissions.\n\nError: {}", e))
+                                    .title("Critical Startup Error")
+                                    .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                                    .show(|_| {});
+
+                                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
+                            }
+                        }
             // Create a broadcast channel with a capacity of 100 messages
             let (tx, _rx) = broadcast::channel(100);
 
@@ -153,6 +167,7 @@ pub fn run() {
             commands::db::shoot::save_shoot,
             commands::db::shoot::delete_shoot,
             commands::db::shoot::fetch_shoot,
+            commands::yt_downloader::download_youtube_video,
             broadcast_payload,
             get_bible_versions,
             get_bible_books,

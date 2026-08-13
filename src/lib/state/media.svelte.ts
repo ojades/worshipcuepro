@@ -52,6 +52,7 @@ class MediaState {
   private _isProcessingThumbs = false;
 
   savedCategories = $state<string[]>([]);
+  isDownloadingYoutube = $state(false);
 
   categories = $derived.by(() => {
     const usedCategories = this.allMedia.map((m) => m.category).filter(Boolean);
@@ -244,6 +245,50 @@ class MediaState {
       };
       video.onerror = (e) => reject(e);
     });
+  }
+
+  // --- DOWNLOAD YOUTUBE ---
+  async downloadYoutubeVideo(
+    url: string,
+    targetCategory: string = "Uncategorized",
+  ) {
+    this.isDownloadingYoutube = true;
+    try {
+      const workspace = settingsState.config.workspacePath;
+      if (!workspace) throw new Error("Workspace path is not configured.");
+
+      // 1. Call Rust to download the file directly to the workspace
+      const filename = await invoke<string>("download_youtube_video", {
+        url: url,
+        workspacePath: workspace,
+      });
+
+      // 2. Insert the downloaded file using the Rust SQLite backend
+      const id = crypto.randomUUID();
+      const name = filename.replace(/\.[^/.]+$/, "");
+
+      await invoke("bulk_insert_media", {
+        items: [
+          {
+            id: id,
+            filename: name,
+            filepath: filename,
+            type: "video",
+            category: targetCategory,
+          },
+        ],
+      });
+
+      // 3. Reload media to show the new video instantly
+      await this.loadAll();
+      return true;
+    } catch (err) {
+      console.error("YouTube download failed:", err);
+      alert(err);
+      return false;
+    } finally {
+      this.isDownloadingYoutube = false;
+    }
   }
 
   async importMedia(targetCategory: string = "Uncategorized") {

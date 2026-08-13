@@ -15,6 +15,7 @@
         VolumeX,
         FastForward,
         X,
+        Link2,
     } from "@lucide/svelte";
     import { media, type Media } from "$lib/state/media.svelte";
     import { onMount } from "svelte";
@@ -24,8 +25,9 @@
         type ConfirmDialogOptions,
     } from "$lib/utils/helper";
     import { invoke } from "@tauri-apps/api/core";
-    import { emit } from "@tauri-apps/api/event"; // <-- NEW: Imported native emit
+    import { emit } from "@tauri-apps/api/event";
 
+    // ... [KEEP EXISTING STATE VARIABLES] ...
     let activeTab = $state<"images" | "videos">("videos");
     let activeCategory = $state<string>("All");
     let searchQuery = $state("");
@@ -33,7 +35,6 @@
         Record<string, { dimensions?: string; duration?: string }>
     >({});
 
-    // --- Bulk Selection State ---
     let isSelectMode = $state(false);
     let selectedIds = $state<Set<string>>(new Set());
     let isCategoryDropdownOpen = $state(false);
@@ -41,12 +42,16 @@
     let hoverTimer: ReturnType<typeof setTimeout>;
     let activePreviewId = $state<string | null>(null);
 
-    // --- Local Video Sync State for the Scrubber ---
     let localTime = $state(0);
     let localDuration = $state(0);
     let syncVideoNode = $state<HTMLVideoElement | null>(null);
 
-    // Actively control the ghost video so it perfectly mirrors the projector's playback engine
+    // --- NEW: YouTube Modal State ---
+    let showYoutubeModal = $state(false);
+    let youtubeUrlInput = $state("");
+
+    // ... [KEEP EXISTING FUNCTIONS] ...
+
     $effect(() => {
         if (syncVideoNode && presentation.currentBackground) {
             if (
@@ -65,13 +70,10 @@
         }
     });
 
-    // Cleanly parse the ugly encoded Tauri URL back into a readable filename
     function getFilenameFromUrl(url: string) {
         if (!url) return "Unknown Media";
         try {
-            // Strip any hash or query parameters (like #t=0.1)
             const cleanUrl = url.split("#")[0].split("?")[0];
-            // Decode the URL components (%20 -> space, %2F -> /) and pop the filename
             return (
                 decodeURIComponent(cleanUrl).split(/[/\\]/).pop() ||
                 "Unknown Media"
@@ -96,7 +98,6 @@
         if (syncVideoNode) {
             syncVideoNode.currentTime = time;
         }
-        // Direct frontend-to-frontend emit. Bypasses Rust for instant zero-latency syncing!
         await emit("media-seek", time);
     }
 
@@ -200,11 +201,85 @@
             selectedIds.clear();
         }
     }
+
+    // --- NEW: Trigger Download ---
+    async function submitYoutubeDownload() {
+        if (!youtubeUrlInput.trim()) return;
+        const url = youtubeUrlInput;
+        showYoutubeModal = false;
+        youtubeUrlInput = "";
+
+        const success = await media.downloadYoutubeVideo(
+            url,
+            activeCategory === "All" ? "Uncategorized" : activeCategory,
+        );
+        if (success) {
+            activeTab = "videos"; // Switch to videos tab to see the new download
+        }
+    }
 </script>
 
 <div
     class="flex-1 flex flex-col bg-zinc-950 h-full overflow-hidden rounded-tl-2xl border-t border-l border-zinc-800 relative"
 >
+    <!-- YOUTUBE DOWNLOAD MODAL -->
+    {#if showYoutubeModal}
+        <div
+            class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+        >
+            <div
+                class="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            >
+                <div class="p-6">
+                    <div class="flex items-center gap-3 mb-2 text-red-500">
+                        <Play size={28} />
+                        <h2 class="text-xl font-bold text-white">
+                            Download from YouTube
+                        </h2>
+                    </div>
+                    <p class="text-sm text-zinc-400 mb-6">
+                        Paste a YouTube link below. WorshipCuePro will download
+                        the highest quality video locally so it plays smoothly
+                        during the service.
+                    </p>
+
+                    <div class="relative mb-6">
+                        <Link2
+                            size={18}
+                            class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                        />
+                        <input
+                            type="text"
+                            placeholder="https://youtube.com/watch?v=..."
+                            bind:value={youtubeUrlInput}
+                            onkeydown={(e) =>
+                                e.key === "Enter" && submitYoutubeDownload()}
+                            class="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-white placeholder-zinc-600 focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none"
+                            autofocus
+                        />
+                    </div>
+
+                    <div class="flex justify-end gap-3">
+                        <button
+                            onclick={() => (showYoutubeModal = false)}
+                            class="px-4 py-2 rounded-lg text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onclick={submitYoutubeDownload}
+                            disabled={!youtubeUrlInput}
+                            class="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                            Download Video
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {/if}
+
+    <!-- EXISTING IMPORT OVERLAY -->
     {#if media.isImporting}
         <div
             class="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white"
@@ -216,8 +291,22 @@
         </div>
     {/if}
 
-    <!-- Hidden Sync Video for the Control Bar -->
-    <!-- Using opacity-0 w-[1px] instead of 'hidden' prevents browsers from throttling timeupdate events -->
+    <!-- NEW YOUTUBE DOWNLOAD OVERLAY -->
+    {#if media.isDownloadingYoutube}
+        <div
+            class="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white"
+        >
+            <Loader2 class="animate-spin text-red-500 mb-4" size={48} />
+            <p class="font-bold text-lg tracking-widest uppercase text-white">
+                Downloading Video...
+            </p>
+            <p class="text-zinc-400 text-sm mt-2 max-w-sm text-center">
+                This may take a minute depending on the video length and your
+                internet connection.
+            </p>
+        </div>
+    {/if}
+
     {#if presentation.currentBackground?.type === "video"}
         <!-- svelte-ignore a11y_media_has_caption -->
         <video
@@ -235,6 +324,7 @@
     <div class="border-b border-zinc-800 bg-zinc-950/30 shrink-0 z-10 pt-2">
         <div class="px-6 py-4 flex flex-col gap-4">
             {#if isSelectMode}
+                <!-- Bulk Actions omitted for brevity, keep existing logic -->
                 <div
                     class="flex items-center justify-between bg-violet-900/20 border border-violet-500/30 p-2 pl-4 rounded-xl animate-in fade-in zoom-in-95 duration-200"
                 >
@@ -351,6 +441,16 @@
                                 class="bg-zinc-900 border border-zinc-800 rounded-lg pl-10 pr-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-violet-600 focus:ring-1 focus:ring-violet-600 outline-none w-48"
                             />
                         </div>
+
+                        <!-- NEW YOUTUBE DOWNLOAD BUTTON -->
+                        <!-- <button
+                            onclick={() => (showYoutubeModal = true)}
+                            class="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-red-500 px-3 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
+                            title="Download from YouTube"
+                        >
+                            <Play size={16} />
+                        </button> -->
+
                         <button
                             onclick={() =>
                                 media.importMedia(
@@ -367,6 +467,7 @@
             {/if}
         </div>
 
+        <!-- CATEGORY PILLS (KEEP EXACTLY THE SAME) -->
         <div
             class="px-6 pb-4 flex items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         >
@@ -407,7 +508,7 @@
         </div>
     </div>
 
-    <!-- MAIN PANE: Media Grid -->
+    <!-- MAIN PANE: Media Grid (KEEP EXACTLY THE SAME) -->
     <div class="flex-1 overflow-y-auto px-6 py-6 custom-scrollbar">
         {#if filteredMedia.length === 0}
             <div
@@ -424,8 +525,7 @@
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
-                        class="group relative bg-zinc-900/50 rounded-xl border p-2 transition-all duration-200 cursor-pointer hover:bg-zinc-900/80
-                        {isSelectMode
+                        class="group relative bg-zinc-900/50 rounded-xl border p-2 transition-all duration-200 cursor-pointer hover:bg-zinc-900/80 {isSelectMode
                             ? selectedIds.has(item.id)
                                 ? 'border-violet-500 bg-violet-900/20'
                                 : 'border-zinc-800/50 hover:border-zinc-500'
@@ -473,7 +573,6 @@
                             </div>
                         {/if}
 
-                        <!-- Thumbnail -->
                         <div
                             class="aspect-video bg-zinc-800 rounded-lg overflow-hidden relative mb-2 {isSelectMode &&
                             selectedIds.has(item.id)
@@ -538,7 +637,6 @@
                             {/if}
                         </div>
 
-                        <!-- Metadata -->
                         <div class="space-y-1 px-1">
                             <p
                                 class="text-sm text-zinc-300 font-medium truncate"
@@ -565,7 +663,7 @@
         {/if}
     </div>
 
-    <!-- BOTTOM FIXED CONTROL BAR -->
+    <!-- BOTTOM FIXED CONTROL BAR (KEEP EXACTLY THE SAME) -->
     {#if presentation.currentBackground}
         <div
             class="shrink-0 h-16 bg-zinc-950 border-t border-zinc-800 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] flex items-center justify-between px-6 z-20 animate-in slide-in-from-bottom duration-300"
@@ -594,9 +692,11 @@
                         class="text-xs font-bold text-violet-400 uppercase tracking-wider"
                         >Now Playing</span
                     >
-                    <span class="text-sm text-zinc-200 font-medium truncate">
-                        {getFilenameFromUrl(presentation.currentBackground.url)}
-                    </span>
+                    <span class="text-sm text-zinc-200 font-medium truncate"
+                        >{getFilenameFromUrl(
+                            presentation.currentBackground.url,
+                        )}</span
+                    >
                 </div>
             </div>
 
@@ -666,6 +766,7 @@
                                     parseFloat(e.currentTarget.value),
                                 )}
                         >
+                            <option value={0.25}>0.25x</option>
                             <option value={0.5}>0.5x</option>
                             <option value={0.75}>0.75x</option>
                             <option value={1.0}>1x</option>
@@ -709,7 +810,6 @@
 </div>
 
 <style>
-    /* Styling for the custom slider track */
     input[type="range"]::-webkit-slider-thumb {
         appearance: none;
         width: 12px;

@@ -17,13 +17,12 @@ pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
     let app_dir = app_handle
         .path()
         .app_data_dir()
-        .expect("Failed to resolve app data directory");
+        .map_err(|_| "Failed to resolve app data directory".to_string())?;
 
-    fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&app_dir).map_err(|e| format!("Failed to create app data dir: {}", e))?;
 
-    // 1. Read the core config to find the workspace
     let config_path = app_dir.join("wcp_core.json");
-    let mut db_dir = match fs::read_to_string(&config_path) {
+    let db_dir = match fs::read_to_string(&config_path) {
         Ok(json) => {
             let config: CoreConfig = serde_json::from_str(&json).unwrap_or_default();
             config.workspace_path.map(PathBuf::from)
@@ -31,20 +30,11 @@ pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
         Err(_) => None,
     };
 
-    // 2. If no workspace is set, default to Documents/WorshipCuePro
-    if db_dir.is_none() {
-        let docs_dir = app_handle
-            .path()
-            .document_dir()
-            .expect("Failed to resolve documents dir");
-        let default_workspace = docs_dir.join("WorshipCuePro");
-        db_dir = Some(default_workspace);
-    }
+    let target_dir = db_dir.unwrap_or_else(|| app_dir.clone());
 
-    let target_dir = db_dir.unwrap();
-    fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
 
-    // 3. Mount the database in the target Workspace
     let db_path = target_dir.join("worshipcue.db");
 
     println!("[WorshipCuePro] Rust DB Engine mounting at: {:?}", db_path);

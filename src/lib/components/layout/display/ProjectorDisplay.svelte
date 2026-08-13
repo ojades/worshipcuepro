@@ -174,6 +174,7 @@
     {#if display.liveBackground}
         {#if display.liveBackground.type === "video"}
             {#key display.liveBackground.url}
+                <!-- svelte-ignore a11y_media_has_caption -->
                 <video
                     bind:this={bgVideoNode}
                     src={display.liveBackground.url}
