@@ -13,14 +13,10 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { chunkProse } from "$lib/utils/helper";
 
 export class PresentationState {
-  // -------------------------
-  // Core State (Svelte Runes)
-  // -------------------------
   isBlackout = $state(false);
   isTextCleared = $state(false);
   isBackgroundCleared = $state(false);
 
-  // --- UNIFIED MEDIA STATE ---
   currentBackground = $state<{
     url: string;
     type: string;
@@ -45,13 +41,9 @@ export class PresentationState {
   activeCue = $state<Cue | null>(null);
   activeSlideId = $state<string | null>(null);
 
-  // Overlay / Stash State
   stashedCue = $state<Cue | null>(null);
   stashedSlideId = $state<string | null>(null);
 
-  // -------------------------
-  // Derived State
-  // -------------------------
   isOverlayActive = $derived(this.stashedCue !== null);
 
   allSlidesInCue = $derived(
@@ -104,13 +96,32 @@ export class PresentationState {
   }
 
   private async initSyncListener() {
-    console.log("[Operator] Presentation state initialized. Listening...");
     try {
       await listen("request-presentation-state", () => {
         this.broadcastState();
       });
     } catch (err) {
       console.error("[Operator] Failed to bind state listener:", err);
+    }
+  }
+
+  // --- NEW: Helper to auto-sync slide media to the unified background ---
+  private syncSlideMedia(cue: any, slideId: string | null) {
+    if (!slideId || !cue?.sections) return;
+    for (const section of cue.sections) {
+      const slide = section.slides.find((s: any) => s.id === slideId);
+      if (slide?.media) {
+        this.currentBackground = {
+          url: slide.media.url,
+          type: slide.media.type,
+          isMuted: true, // Default to muted
+          isPlaying: true,
+          playbackRate: 1.0,
+        };
+        this.isBackgroundCleared = false;
+        this.isTextCleared = true; // Clear text so media is fully visible
+        return;
+      }
     }
   }
 
@@ -124,22 +135,20 @@ export class PresentationState {
     if (isSameCue && cue.type !== "bible") {
       cue.sections = this.activeCue!.sections;
     } else if (cue.type === "media") {
-      // Unify: Treat Media Cues as Global Backgrounds
       const safeUrl =
         cue.asset_url || (cue.filepath ? convertFileSrc(cue.filepath) : "");
 
       this.currentBackground = {
         url: safeUrl,
         type: cue.media_type || cue.type || "image",
-        isMuted: true, // Muted by default
+        isMuted: true,
         isPlaying: true,
         playbackRate: 1.0,
       };
 
       this.isBackgroundCleared = false;
-      this.isTextCleared = true; // Auto-clear text so the media is fully visible
+      this.isTextCleared = true;
 
-      // We still populate the slide data so the SlideGrid UI can preview it
       cue.sections = [
         {
           id: `media-sec-${cue.id}`,
@@ -180,6 +189,8 @@ export class PresentationState {
       this.activeSlideId = cue.sections[0]?.slides[0]?.id || null;
     }
 
+    // Sync media right before broadcasting
+    this.syncSlideMedia(this.activeCue, this.activeSlideId);
     this.broadcastState();
   }
 
@@ -297,6 +308,7 @@ export class PresentationState {
       this.currentSlideIndex + 1 < this.allSlidesInCue.length
     ) {
       this.activeSlideId = this.allSlidesInCue[this.currentSlideIndex + 1].id;
+      this.syncSlideMedia(this.activeCue, this.activeSlideId);
       this.broadcastState();
     }
   }
@@ -304,6 +316,7 @@ export class PresentationState {
   prevSlide() {
     if (this.currentSlideIndex > 0) {
       this.activeSlideId = this.allSlidesInCue[this.currentSlideIndex - 1].id;
+      this.syncSlideMedia(this.activeCue, this.activeSlideId);
       this.broadcastState();
     }
   }
@@ -316,6 +329,7 @@ export class PresentationState {
     );
     if (currentSecIndex !== -1 && currentSecIndex + 1 < sections.length) {
       this.activeSlideId = sections[currentSecIndex + 1].slides[0]?.id || null;
+      this.syncSlideMedia(this.activeCue, this.activeSlideId);
       this.broadcastState();
     }
   }
@@ -328,6 +342,7 @@ export class PresentationState {
     );
     if (currentSecIndex > 0) {
       this.activeSlideId = sections[currentSecIndex - 1].slides[0]?.id || null;
+      this.syncSlideMedia(this.activeCue, this.activeSlideId);
       this.broadcastState();
     }
   }
@@ -342,7 +357,6 @@ export class PresentationState {
     this.broadcastState();
   }
 
-  // --- NEW MEDIA CONTROL METHODS ---
   setBackground(url: string, type: string) {
     this.currentBackground = {
       url,

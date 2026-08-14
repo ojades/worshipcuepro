@@ -156,14 +156,13 @@
     }
 </script>
 
-<!--
 <svelte:window
     oncontextmenu={(e) => {
         if (!dev) {
             e.preventDefault();
         }
     }}
-/> -->
+/>
 
 {#if needsSetup}
     <OnboardingSetup onComplete={handleWorkspaceSelected} />

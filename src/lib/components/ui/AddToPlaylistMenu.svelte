@@ -1,3 +1,4 @@
+<!-- src/lib/components/ui/AddToPlaylistMenu.svelte -->
 <script lang="ts">
     import { playlists } from "$lib/state/playlists.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
@@ -7,27 +8,39 @@
     let {
         cueId,
         cueType = "song",
-        align = "right", // defaults to dropping from the right edge
-        direction = "down", // defaults to dropping downward
+        align = "right",
+        direction = "down",
         children,
         class: className = "",
+        onAdd, // Optional callback to run after successful add
     } = $props<{
-        cueId: string;
+        cueId: string | string[]; // <-- FIX: Now accepts single string or array
         cueType?: "song" | "media" | "bible" | "presentation" | "shoot";
         align?: "left" | "right";
         direction?: "up" | "down";
         children: Snippet;
         class?: string;
+        onAdd?: () => void;
     }>();
 
     let isOpen = $state(false);
     let showSuccess = $state(false);
 
     function handleAdd(playlistId: string) {
-        playlists.addCueToPlaylist(playlistId, cueId, cueType);
+        // FIX: Handle both single items and bulk arrays
+        if (Array.isArray(cueId)) {
+            for (const id of cueId) {
+                playlists.addCueToPlaylist(playlistId, id, cueType);
+            }
+        } else {
+            playlists.addCueToPlaylist(playlistId, cueId, cueType);
+        }
 
         isOpen = false;
         showSuccess = true;
+
+        if (onAdd) onAdd();
+
         setTimeout(() => {
             showSuccess = false;
         }, 1500);

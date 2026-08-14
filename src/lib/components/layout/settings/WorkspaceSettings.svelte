@@ -4,7 +4,7 @@
     import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
     import { systemState } from "$lib/state/system.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
-    import { initDB } from "$lib/db";
+    import { relaunch } from "@tauri-apps/plugin-process"; // <-- NEW: Import relaunch
 
     import Cloud from "@lucide/svelte/icons/cloud";
     import Info from "@lucide/svelte/icons/info";
@@ -12,6 +12,7 @@
     import Download from "@lucide/svelte/icons/download";
     import Upload from "@lucide/svelte/icons/upload";
     import SettingsIcon from "@lucide/svelte/icons/settings";
+    import { setCoreWorkspaceAPI } from "$lib/commands/settings-db";
 
     let workspacePath = $derived(settingsState.config.workspacePath);
 
@@ -28,16 +29,16 @@
             });
 
             if (selectedDir && typeof selectedDir === "string") {
-                settingsState.update({ workspacePath: selectedDir });
+                const savePath =
+                    await settingsState.parseWorkspaceDir(selectedDir);
 
-                const success = await initDB(selectedDir);
+                await setCoreWorkspaceAPI(savePath);
 
-                if (success) {
-                    systemState.addAlert({
-                        message: "Workspace migrated successfully.",
-                        type: "success",
-                    });
-                }
+                // Update local state just in case, but we are about to restart
+                settingsState.update({ workspacePath: savePath });
+
+                // <-- NEW: Restart the app to mount the Rust DB in the new location
+                await relaunch();
             }
         } catch (error) {
             systemState.addAlert({
@@ -48,12 +49,22 @@
     }
 
     async function handleResetWorkspace() {
-        settingsState.update({ workspacePath: null });
-        await initDB(null);
-        systemState.addAlert({
-            message: "Reverted to default local storage.",
-            type: "success",
-        });
+        try {
+            // Passing an empty string/null depends on your Rust implementation,
+            // but assuming `parseWorkspaceDir` or `setCoreWorkspaceAPI` handles defaults:
+            // (If setCoreWorkspaceAPI fails with empty string, you can add a Rust command to delete the core file)
+            const defaultPath = await settingsState.parseWorkspaceDir(""); // Or however your default is parsed
+            await setCoreWorkspaceAPI(defaultPath);
+            settingsState.update({ workspacePath: null });
+
+            // <-- NEW: Restart the app to mount the Rust DB back to the default AppData folder
+            await relaunch();
+        } catch (error) {
+            systemState.addAlert({
+                message: "Failed to reset workspace.",
+                type: "error",
+            });
+        }
     }
 
     function handleClearCache() {

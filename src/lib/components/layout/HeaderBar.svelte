@@ -19,6 +19,8 @@
         Power,
         Tv,
         MonitorX,
+        ChevronRight,
+        X,
     } from "@lucide/svelte";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
 
@@ -177,11 +179,51 @@
 <header
     class="h-14 border-b border-border bg-card/40 backdrop-blur-md px-6 flex items-center justify-between z-50 relative"
 >
-    <div class="flex flex-col">
+    <div class="flex items-center select-none">
         <h1
-            class="text-sm font-bold tracking-tight text-foreground/90 uppercase flex items-center gap-2"
+            class="flex items-center text-sm font-bold tracking-tight uppercase"
         >
-            WorshipCuePro - {title} - {presentation.activePlaylist?.name}
+            <!-- Brand Name -->
+            <div class="flex items-center">
+                <span class="text-foreground/90">WorshipCue</span>
+                <span class="text-neon-violet">Pro</span>
+            </div>
+
+            <!-- Page Title -->
+            <ChevronRight
+                size={14}
+                strokeWidth={3}
+                class="mx-2 text-muted-foreground/70"
+            />
+            <span class="text-muted-foreground">{title}</span>
+
+            <!-- Active Playlist Pill -->
+            {#if presentation.activePlaylist}
+                <ChevronRight
+                    size={14}
+                    strokeWidth={3}
+                    class="mx-2 text-muted-foreground/70"
+                />
+                <div
+                    class="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-md pl-3 pr-1 py-1 shadow-sm"
+                >
+                    <div
+                        class="w-1.5 h-1.5 rounded-full bg-neon-cyan shadow-[0_0_8px_rgba(6,182,212,0.8)] animate-pulse"
+                    ></div>
+                    <span
+                        class="text-neon-cyan text-xs font-bold tracking-widest mt-px"
+                    >
+                        {presentation.activePlaylist.name}
+                    </span>
+                    <button
+                        onclick={() => (presentation.activePlaylist = null)}
+                        class="ml-1 p-0.5 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                        title="Unmount Playlist"
+                    >
+                        <X size={14} strokeWidth={2.5} />
+                    </button>
+                </div>
+            {/if}
         </h1>
     </div>
 

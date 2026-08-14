@@ -16,6 +16,7 @@
         FastForward,
         X,
         Link2,
+        ListPlus, // <-- NEW: Import ListPlus
     } from "@lucide/svelte";
     import { media, type Media } from "$lib/state/media.svelte";
     import { onMount } from "svelte";
@@ -26,6 +27,7 @@
     } from "$lib/utils/helper";
     import { invoke } from "@tauri-apps/api/core";
     import { emit } from "@tauri-apps/api/event";
+    import AddToPlaylistMenu from "$lib/components/ui/AddToPlaylistMenu.svelte"; // <-- NEW: Import Menu
 
     // ... [KEEP EXISTING STATE VARIABLES] ...
     let activeTab = $state<"images" | "videos">("videos");
@@ -324,7 +326,6 @@
     <div class="border-b border-zinc-800 bg-zinc-950/30 shrink-0 z-10 pt-2">
         <div class="px-6 py-4 flex flex-col gap-4">
             {#if isSelectMode}
-                <!-- Bulk Actions omitted for brevity, keep existing logic -->
                 <div
                     class="flex items-center justify-between bg-violet-900/20 border border-violet-500/30 p-2 pl-4 rounded-xl animate-in fade-in zoom-in-95 duration-200"
                 >
@@ -380,6 +381,25 @@
                             {/if}
                         </div>
 
+                        <!-- NEW: BULK ADD TO PLAYLIST -->
+                        <AddToPlaylistMenu
+                            cueId={Array.from(selectedIds)}
+                            cueType="media"
+                            direction="down"
+                            align="right"
+                            onAdd={() => {
+                                isSelectMode = false;
+                                selectedIds.clear();
+                            }}
+                        >
+                            <button
+                                disabled={selectedIds.size === 0}
+                                class="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white px-3 py-1.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+                            >
+                                <ListPlus size={16} /> Add to Playlist
+                            </button>
+                        </AddToPlaylistMenu>
+
                         <button
                             onclick={handleBulkDelete}
                             disabled={selectedIds.size === 0}
@@ -401,6 +421,7 @@
                     </div>
                 </div>
             {:else}
+                <!-- ... [Keep standard header exact as it was] ... -->
                 <div class="flex items-center justify-between">
                     <div class="flex gap-8">
                         <button
@@ -442,15 +463,6 @@
                             />
                         </div>
 
-                        <!-- NEW YOUTUBE DOWNLOAD BUTTON -->
-                        <!-- <button
-                            onclick={() => (showYoutubeModal = true)}
-                            class="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-red-500 px-3 py-2 rounded-lg flex items-center gap-2 font-medium transition-colors"
-                            title="Download from YouTube"
-                        >
-                            <Play size={16} />
-                        </button> -->
-
                         <button
                             onclick={() =>
                                 media.importMedia(
@@ -467,7 +479,7 @@
             {/if}
         </div>
 
-        <!-- CATEGORY PILLS (KEEP EXACTLY THE SAME) -->
+        <!-- CATEGORY PILLS (Keep existing) -->
         <div
             class="px-6 pb-4 flex items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         >
@@ -508,7 +520,7 @@
         </div>
     </div>
 
-    <!-- MAIN PANE: Media Grid (KEEP EXACTLY THE SAME) -->
+    <!-- MAIN PANE: Media Grid -->
     <div class="flex-1 overflow-y-auto px-6 py-6 custom-scrollbar">
         {#if filteredMedia.length === 0}
             <div
@@ -524,8 +536,9 @@
                 {#each filteredMedia as item (item.id)}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <!-- FIX: Added hover:z-50 to ensure dropdown overlaps other cards -->
                     <div
-                        class="group relative bg-zinc-900/50 rounded-xl border p-2 transition-all duration-200 cursor-pointer hover:bg-zinc-900/80 {isSelectMode
+                        class="group relative hover:z-50 bg-zinc-900/50 rounded-xl border p-2 transition-all duration-200 cursor-pointer hover:bg-zinc-900/80 {isSelectMode
                             ? selectedIds.has(item.id)
                                 ? 'border-violet-500 bg-violet-900/20'
                                 : 'border-zinc-800/50 hover:border-zinc-500'
@@ -570,6 +583,27 @@
                                         ></polyline></svg
                                     >
                                 {/if}
+                            </div>
+                        {/if}
+
+                        <!-- ADD TO PLAYLIST MENU: Moved OUTSIDE the aspect-video overflow-hidden container -->
+                        {#if !isSelectMode}
+                            <div
+                                class="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                                <AddToPlaylistMenu
+                                    cueId={item.id}
+                                    cueType="media"
+                                    direction="down"
+                                    align="right"
+                                >
+                                    <button
+                                        class="p-1.5 bg-black/80 hover:bg-neon-cyan text-white hover:text-black rounded-lg border border-white/10 backdrop-blur-md shadow-xl transition-all"
+                                        title="Add to Playlist"
+                                    >
+                                        <ListPlus size={16} />
+                                    </button>
+                                </AddToPlaylistMenu>
                             </div>
                         {/if}
 
@@ -690,7 +724,7 @@
                 <div class="flex flex-col min-w-0">
                     <span
                         class="text-xs font-bold text-violet-400 uppercase tracking-wider"
-                        >Now Playing</span
+                        >Currently Playing</span
                     >
                     <span class="text-sm text-zinc-200 font-medium truncate"
                         >{getFilenameFromUrl(
@@ -766,7 +800,6 @@
                                     parseFloat(e.currentTarget.value),
                                 )}
                         >
-                            <option value={0.25}>0.25x</option>
                             <option value={0.5}>0.5x</option>
                             <option value={0.75}>0.75x</option>
                             <option value={1.0}>1x</option>

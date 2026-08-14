@@ -1,5 +1,6 @@
-<!-- /src/lib/components/layout/shoot/ShootBuilder.svelte -->
+<!-- src/lib/components/layout/shoot/ShootBuilder.svelte -->
 <script lang="ts">
+    import { untrack } from "svelte";
     import { dndzone } from "svelte-dnd-action";
     import {
         Plus,
@@ -10,7 +11,6 @@
         Save,
         X,
     } from "@lucide/svelte";
-    import { convertFileSrc } from "@tauri-apps/api/core";
     import { media } from "$lib/state/media.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
     import { shootState } from "$lib/state/shoot.svelte";
@@ -25,16 +25,15 @@
         onClose,
     } = $props<{
         shootId: string;
-        initialTitle: string;
-        initialSlides: any[];
+        initialTitle?: string;
+        initialSlides?: any[];
         onClose: () => void;
     }>();
 
-    let currentId = $state(shootId);
-    let title = $state(initialTitle);
-    let shootSlides = $state<any[]>(initialSlides);
+    let currentId = $state(untrack(() => shootId));
+    let title = $state(untrack(() => initialTitle));
+    let shootSlides = $state<any[]>(untrack(() => initialSlides));
 
-    // Context Menu State
     let contextMenu = $state({
         visible: false,
         x: 0,
@@ -75,14 +74,13 @@
         }
     }
 
-    // --- Builder Handlers ---
     function addMediaToShoot(mediaItem: any) {
         const newSlide = {
             id: crypto.randomUUID(),
             media_id: mediaItem.id,
             filepath: mediaItem.filepath,
             media_type: mediaItem.type,
-            asset_url: convertFileSrc(mediaItem.filepath),
+            asset_url: mediaItem.asset_url,
         };
         shootSlides = [...shootSlides, newSlide];
     }
@@ -113,7 +111,6 @@
         onClose();
     }
 
-    // --- Context Menu Configuration ---
     function openContextMenu(e: MouseEvent, slide: any) {
         e.preventDefault();
         e.stopPropagation();
@@ -129,7 +126,6 @@
         contextMenu.visible = false;
     }
 
-    // Reactively generate the menu options depending on which slide is active
     let menuItems = $derived<ContextMenuItem[]>(
         contextMenu.activeSlide
             ? [
@@ -149,7 +145,6 @@
                               (s) => s.id === contextMenu.activeSlide.id,
                           );
                           if (index > 0) {
-                              // Create a copy to maintain Svelte 5 reactivity
                               const arr = [...shootSlides];
                               const [slide] = arr.splice(index, 1);
                               shootSlides = [slide, ...arr];
@@ -197,14 +192,15 @@
                     onclick={() => addMediaToShoot(mediaItem)}
                 >
                     {#if mediaItem.type === "video"}
+                        <!-- svelte-ignore a11y_media_has_caption -->
                         <video
-                            src="{convertFileSrc(mediaItem.filepath)}#t=0.1"
+                            src="{mediaItem.asset_url}#t=0.1"
                             class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity"
                             muted
                         ></video>
                     {:else}
                         <img
-                            src={convertFileSrc(mediaItem.filepath)}
+                            src={mediaItem.asset_url}
                             alt="Asset"
                             class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity"
                         />
@@ -222,7 +218,6 @@
 
     <!-- RIGHT PANE: Storyboard -->
     <div class="flex-1 flex flex-col bg-background relative">
-        <!-- Builder Header -->
         <div
             class="px-6 py-4 border-b border-border flex items-center justify-between bg-card/10 shrink-0"
         >
@@ -268,7 +263,6 @@
             </div>
         </div>
 
-        <!-- Storyboard Grid -->
         <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
             {#if shootSlides.length === 0}
                 <div
@@ -298,6 +292,7 @@
                             oncontextmenu={(e) => openContextMenu(e, slide)}
                         >
                             {#if slide.media_type === "video"}
+                                <!-- svelte-ignore a11y_media_has_caption -->
                                 <video
                                     src="{slide.asset_url}#t=0.1"
                                     class="w-full h-full object-cover"
@@ -311,14 +306,12 @@
                                 />
                             {/if}
 
-                            <!-- Slide Number Badge -->
                             <div
                                 class="absolute top-2 left-2 bg-black/70 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm pointer-events-none"
                             >
                                 {shootSlides.indexOf(slide) + 1}
                             </div>
 
-                            <!-- Quick Remove Slide Button -->
                             <button
                                 class="absolute top-2 right-2 bg-red-500/90 hover:bg-red-500 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-sm"
                                 onclick={(e) => {

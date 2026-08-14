@@ -1,6 +1,7 @@
-// /src/lib/state/shoot.svelte.ts
+// src/lib/state/shoot.svelte.ts
 import type { Cue } from "$lib/types/models";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { media } from "$lib/state/media.svelte";
 import {
   fetchAllShootsAPI,
   fetchShootSlidesAPI,
@@ -19,7 +20,6 @@ export type Shoot = {
 export class ShootState {
   allShoots = $state<ShootMeta[]>([]);
 
-  // Fetch all shoots for the grid view
   async loadAll() {
     try {
       this.allShoots = await fetchAllShootsAPI();
@@ -32,35 +32,35 @@ export class ShootState {
     try {
       const rawSlides = await fetchShootSlidesAPI(shootId);
 
-      return rawSlides.map((slide) => ({
-        id: slide.id,
-        media_id: slide.media_id,
-        filepath: slide.filepath,
-        media_type: slide.media_type,
-        asset_url: convertFileSrc(slide.filepath),
-      }));
+      return rawSlides.map((slide) => {
+        // Find the fully resolved media item to get the absolute asset_url
+        const m = media.allMedia.find((x) => x.id === slide.media_id);
+        return {
+          id: slide.id,
+          media_id: slide.media_id,
+          filepath: slide.filepath,
+          media_type: slide.media_type,
+          asset_url: m?.asset_url || convertFileSrc(slide.filepath),
+        };
+      });
     } catch (error) {
       console.error("Failed to fetch shoot slides:", error);
       return [];
     }
   }
 
-  // Create or Update a shoot and its slides
   async saveShoot(id: string | null, title: string, slides: any[]) {
     const shootId = id || crypto.randomUUID();
     try {
       const formattedSlides = slides.map((s) => ({ media_id: s.media_id }));
-
       await saveShootAPI(shootId, title, formattedSlides);
       await this.loadAll();
-
       return shootId;
     } catch (error) {
       console.error("Failed to save shoot:", error);
     }
   }
 
-  // Delete a shoot
   async deleteShoot(id: string) {
     try {
       await deleteShootAPI(id);
@@ -70,7 +70,6 @@ export class ShootState {
     }
   }
 
-  // Generate the Cue object for PresentationState
   async getShoot(shootId: string) {
     try {
       const shoot = await fetchShootAPI(shootId);
@@ -87,14 +86,18 @@ export class ShootState {
             id: `sec_${shoot.id}`,
             title: "Slides",
             color: "#8b5cf6",
-            slides: rawSlides.map((slide) => ({
-              id: slide.id,
-              text: "",
-              media: {
-                type: slide.media_type,
-                url: convertFileSrc(slide.filepath),
-              },
-            })),
+            slides: rawSlides.map((slide) => {
+              // Find the fully resolved media item to get the absolute asset_url
+              const m = media.allMedia.find((x) => x.id === slide.media_id);
+              return {
+                id: slide.id,
+                text: "",
+                media: {
+                  type: slide.media_type,
+                  url: m?.asset_url || convertFileSrc(slide.filepath),
+                },
+              };
+            }),
           },
         ],
       };

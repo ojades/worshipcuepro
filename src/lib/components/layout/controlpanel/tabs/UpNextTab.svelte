@@ -10,25 +10,30 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { playlists } from "$lib/state/playlists.svelte";
     import { dndzone, type DndEvent } from "svelte-dnd-action";
+    import { convertFileSrc } from "@tauri-apps/api/core";
 
     let { onBrowseLibrary } = $props<{ onBrowseLibrary: () => void }>();
 
     let activeCues = $state<any[]>([]);
 
-    // Keep local state synced with the active playlist when it changes
     $effect(() => {
         if (presentation.activePlaylist?.cues) {
-            activeCues = presentation.activePlaylist.cues.map((cue) => ({
-                ...cue,
-                _originalId: cue.id,
-                id: cue.playlist_item_id, // Force unique ID for DND
-            }));
+            activeCues = presentation.activePlaylist.cues.map((cue) => {
+                const resolvedUrl =
+                    cue.asset_url ||
+                    (cue.filepath ? convertFileSrc(cue.filepath) : "");
+                return {
+                    ...cue,
+                    asset_url: resolvedUrl,
+                    _originalId: cue.id,
+                    id: cue.playlist_item_id, // Force unique ID for DND
+                };
+            });
         } else {
             activeCues = [];
         }
     });
 
-    // --- SVELTE-DND-ACTION HANDLERS ---
     function handleDndConsider(e: CustomEvent<DndEvent<any>>) {
         activeCues = e.detail.items;
     }
@@ -93,6 +98,7 @@
                             presentation.fire({
                                 ...cue,
                                 id: cue._originalId,
+                                asset_url: cue.asset_url,
                             })}
                     >
                         <div class="flex items-start gap-3 w-full">
@@ -102,6 +108,7 @@
                             >
                                 {#if cue.type === "media" && cue.asset_url}
                                     {#if cue.media_type === "video"}
+                                        <!-- svelte-ignore a11y_media_has_caption -->
                                         <video
                                             src="{cue.asset_url}#t=0.1"
                                             class="w-full h-full object-cover"
@@ -150,7 +157,6 @@
 
                 <!-- Action & Status Container -->
                 <div class="flex items-center gap-2 shrink-0 mt-1">
-                    <!-- Remove Item Button -->
                     <button
                         class="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-all outline-none"
                         onclick={(e) => removeCue(cue, e)}
@@ -159,7 +165,6 @@
                         <X size={16} />
                     </button>
 
-                    <!-- Active Indicator -->
                     {#if isActive}
                         <div
                             class="w-2 h-2 rounded-full bg-neon-violet shadow-[0_0_8px_rgba(139,92,246,0.8)]"
@@ -184,8 +189,6 @@
 </div>
 
 <style>
-    /* CRITICAL HACK: This stops inner SVG and span elements from triggering dragleave/dragenter loops
-       which cause the browser to abort the drop action */
     :global(body.dragging-active .playlist-item *) {
         pointer-events: none !important;
     }

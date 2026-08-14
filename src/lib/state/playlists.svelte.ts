@@ -1,7 +1,8 @@
-// /src/lib/state/playlists.svelte.ts
+// src/lib/state/playlists.svelte.ts
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { presentation } from "./presentation.svelte";
 import { shootState } from "./shoot.svelte";
+import { media } from "./media.svelte"; // <-- Ensure media state is imported
 import { parseLyrics } from "$lib/utils/lyrics";
 import {
   fetchAllPlaylistsAPI,
@@ -19,7 +20,6 @@ import {
 export class PlaylistsState {
   allPlaylists = $state<PlaylistMeta[]>([]);
 
-  // Fetch all playlists with their cue counts
   async loadAll() {
     try {
       this.allPlaylists = await fetchAllPlaylistsAPI();
@@ -43,7 +43,6 @@ export class PlaylistsState {
       await updatePlaylistAPI(id, newTitle);
       await this.loadAll();
 
-      // If the active playlist was renamed, update it in presentation state too
       if (presentation.activePlaylist?.id === id) {
         presentation.activePlaylist.name = newTitle;
       }
@@ -57,7 +56,6 @@ export class PlaylistsState {
       await deletePlaylistAPI(id);
       await this.loadAll();
 
-      // Clear active view if we just deleted it
       if (presentation.activePlaylist?.id === id) {
         presentation.activePlaylist = null;
       }
@@ -72,11 +70,19 @@ export class PlaylistsState {
     try {
       const rawCues = await fetchPlaylistCuesAPI(playlistId);
 
-      // Hydrate special cue types (Requires frontend utilities like parseLyrics)
+      // Hydrate special cue types
       const cues = await Promise.all(
         rawCues.map(async (cue: any) => {
-          if (cue.type === "media" && cue.filepath) {
-            cue.asset_url = convertFileSrc(cue.filepath);
+          if (cue.type === "media") {
+            // Find the item in local media state for a guaranteed valid asset_url
+            const m = media.allMedia.find((x) => x.id === cue.id);
+            const resolvedPath = cue.filepath || cue.url || m?.filepath || "";
+
+            cue.asset_url =
+              m?.asset_url ||
+              (resolvedPath ? convertFileSrc(resolvedPath) : "");
+            cue.filepath = resolvedPath;
+            cue.media_type = cue.media_type || cue.type || m?.type || "video";
           } else if (cue.type === "shoot") {
             const fullShoot = await shootState.getShoot(cue.id);
             cue.sections = fullShoot.sections;
@@ -105,7 +111,6 @@ export class PlaylistsState {
       return presentation.activePlaylist.id;
     }
 
-    // Auto-create a fallback "Live Session" if none exists
     const id = crypto.randomUUID();
     const title = `Live Session - ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 
@@ -137,12 +142,38 @@ export class PlaylistsState {
     try {
       await addCueToPlaylistAPI(playlistId, cueId, cueType, playlistItemId);
 
-      // If we just added to the currently active playlist, refresh it immediately
       if (presentation.activePlaylist?.id === playlistId) {
+        let newCue: any = {
+          id: cueId,
+          playlist_item_id: playlistItemId,
+          type: cueType,
+        };
+
+        if (cueType === "media") {
+          const m = media.allMedia.find((x) => x.id === cueId);
+          if (m) {
+            newCue = {
+              ...newCue,
+              title: m.filename,
+              filepath: m.filepath,
+              media_type: m.type,
+              asset_url: m.asset_url || convertFileSrc(m.filepath),
+            };
+          }
+        } else if (cueType === "song") {
+          newCue.title = "Loading Song...";
+        } else if (cueType === "shoot") {
+          newCue.title = "Loading Shoot...";
+        }
+
+        presentation.activePlaylist.cues = [
+          ...presentation.activePlaylist.cues,
+          newCue,
+        ];
+
         await this.loadPlaylist(playlistId);
       }
 
-      // Update the cue counts in the library tab
       await this.loadAll();
     } catch (error) {
       console.error("Failed to add cue to playlist:", error);
@@ -152,7 +183,6 @@ export class PlaylistsState {
   async updateSortOrder(newCuesArray: any[]) {
     if (!presentation.activePlaylist) return;
 
-    // Optimistically update UI
     presentation.activePlaylist.cues = newCuesArray;
 
     try {
@@ -161,11 +191,10 @@ export class PlaylistsState {
         sort_order: index,
       }));
 
-      // Executes inside a fast Rust transaction
       await updatePlaylistSortOrderAPI(updates);
     } catch (error) {
       console.error("Failed to save new playlist order:", error);
-      await this.loadPlaylist(presentation.activePlaylist.id); // Revert UI on fail
+      await this.loadPlaylist(presentation.activePlaylist.id);
     }
   }
 
