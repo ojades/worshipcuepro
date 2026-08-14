@@ -277,15 +277,16 @@
                         </span>
                     </div>
                 {:else if display.liveText}
-                    <p
+                    <!-- FIX: Rendering raw HTML for Tiptap formatted text, changed to <div> -->
+                    <div
                         class="stage-slide-text text-white transition-all whitespace-pre-wrap duration-300 w-full relative z-10 {getLiveTextScaleClass(
                             display.liveText,
                         )}"
                     >
-                        {display.liveText !== LOADING_SLIDE_TEXT
-                            ? display.liveText
-                            : ""}
-                    </p>
+                        {#if display.liveText !== LOADING_SLIDE_TEXT}
+                            {@html display.liveText}
+                        {/if}
+                    </div>
                 {:else}
                     <!-- MASSIVE CENTERED TIMER FOR EMPTY STAGE -->
                     {#if display.showSpeakerTimerOnStage && speakerTimerText}
@@ -321,13 +322,14 @@
                     class="next-text-container flex-1 w-full flex {horizontalAlignmentClass} justify-center px-8"
                 >
                     {#if display.nextText}
-                        <p
+                        <!-- FIX: Rendering raw HTML for Tiptap formatted text, changed to <div> -->
+                        <div
                             class="stage-next-text cq-text-next text-zinc-400 line-clamp-3 w-full whitespace-pre-wrap"
                         >
-                            {display.nextText !== LOADING_SLIDE_TEXT
-                                ? display.nextText
-                                : ""}
-                        </p>
+                            {#if display.nextText !== LOADING_SLIDE_TEXT}
+                                {@html display.nextText}
+                            {/if}
+                        </div>
                     {:else}
                         <span
                             class="text-zinc-800/50 font-mono tracking-widest cq-text-empty font-bold uppercase"
@@ -365,6 +367,23 @@
         font-weight: var(--font-weight);
         text-align: var(--text-align);
         letter-spacing: var(--letter-spacing);
+    }
+
+    /* FIX: Force embedded HTML from Tiptap to inherit all stage styles perfectly */
+    :global(.stage-slide-text *),
+    :global(.stage-next-text *) {
+        font-family: inherit;
+        font-size: inherit;
+        text-transform: inherit;
+        font-weight: inherit;
+        letter-spacing: inherit;
+        line-height: inherit;
+        text-align: inherit;
+        -webkit-text-stroke: inherit;
+        paint-order: inherit;
+        filter: inherit;
+        margin: 0;
+        white-space: pre-wrap; /* Maintains manual line breaks */
     }
 
     .stage-reference {

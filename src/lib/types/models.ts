@@ -97,3 +97,11 @@ export type SongCue = Cue & {
   ccli?: string;
   raw_lyrics?: string;
 };
+
+export interface ShootSlide {
+  id: string;
+  media_id: string;
+  filepath: string;
+  media_type: "image" | "video";
+  text_content?: string;
+}

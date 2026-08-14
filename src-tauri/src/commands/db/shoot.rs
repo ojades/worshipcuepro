@@ -1,4 +1,4 @@
-// /src-tauri/src/commands/db/shoot.rs
+// src-tauri/src/commands/db/shoot.rs
 use crate::db::DbPool;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -16,14 +16,16 @@ pub struct ShootMeta {
 pub struct ShootSlideRow {
     pub id: String,
     pub media_id: Option<String>,
-    pub filepath: String,
-    pub media_type: String,
+    pub filepath: Option<String>,
+    pub media_type: Option<String>,
     pub sort_order: Option<i32>,
+    pub text_content: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct SlideInsert {
-    pub media_id: String,
+    pub media_id: Option<String>, // Can be null if it's a text-only slide
+    pub text_content: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -75,9 +77,9 @@ pub fn fetch_shoot_slides(
 
     let mut stmt = conn
         .prepare(
-            "SELECT ps.id, ps.media_id, m.filepath, m.type as media_type, ps.sort_order
+            "SELECT ps.id, ps.media_id, m.filepath, m.type as media_type, ps.sort_order, ps.text_content
              FROM shoot_slides ps
-             JOIN media m ON ps.media_id = m.id
+             LEFT JOIN media m ON ps.media_id = m.id
              WHERE ps.shoot_id = ?1
              ORDER BY ps.sort_order ASC",
         )
@@ -91,6 +93,7 @@ pub fn fetch_shoot_slides(
                 filepath: row.get(2)?,
                 media_type: row.get(3)?,
                 sort_order: row.get(4)?,
+                text_content: row.get(5)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -111,10 +114,8 @@ pub fn save_shoot(
 ) -> Result<(), String> {
     let mut conn = pool.get().map_err(|e| e.to_string())?;
 
-    // Perform upsert and slide replacement entirely inside a transaction
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     {
-        // 1. Upsert Shoot
         let existing: Option<String> = tx
             .query_row("SELECT id FROM shoots WHERE id = ?1", [&id], |row| {
                 row.get(0)
@@ -133,19 +134,24 @@ pub fn save_shoot(
             .map_err(|e| e.to_string())?;
         }
 
-        // 2. Wipe existing slides
         tx.execute("DELETE FROM shoot_slides WHERE shoot_id = ?1", [&id])
             .map_err(|e| e.to_string())?;
 
-        // 3. Insert new slides with sort order
+        // Include text_content in the insert
         let mut stmt = tx
-            .prepare("INSERT INTO shoot_slides (id, shoot_id, media_id, sort_order) VALUES (?1, ?2, ?3, ?4)")
+            .prepare("INSERT INTO shoot_slides (id, shoot_id, media_id, sort_order, text_content) VALUES (?1, ?2, ?3, ?4, ?5)")
             .map_err(|e| e.to_string())?;
 
         for (i, slide) in slides.iter().enumerate() {
-            let slide_id = uuid::Uuid::new_v4().to_string(); // Generate UUID natively
-            stmt.execute((&slide_id, &id, &slide.media_id, &(i as i32)))
-                .map_err(|e| e.to_string())?;
+            let slide_id = uuid::Uuid::new_v4().to_string();
+            stmt.execute((
+                &slide_id,
+                &id,
+                &slide.media_id,
+                &(i as i32),
+                &slide.text_content,
+            ))
+            .map_err(|e| e.to_string())?;
         }
     }
     tx.commit().map_err(|e| e.to_string())?;

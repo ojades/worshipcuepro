@@ -13,6 +13,7 @@ export interface ShootSlideRow {
   filepath: string;
   media_type: string;
   sort_order: number;
+  text_content?: string;
 }
 
 export interface SlideInsert {

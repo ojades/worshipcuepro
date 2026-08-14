@@ -201,11 +201,12 @@
             class="relative flex-col w-full flex justify-center {horizontalAlignmentClass}"
         >
             {#if display.liveText}
-                <p
-                    class="slide-text text-white cq-pb-offset whitespace-pre-wrap"
+                <!-- FIX: Render as HTML to support Tiptap Rich Text formatting -->
+                <div
+                    class="slide-text text-white cq-pb-offset w-full text-center"
                 >
-                    {display.liveText}
-                </p>
+                    {@html display.liveText}
+                </div>
             {/if}
 
             {#if display.liveReference}
@@ -324,5 +325,19 @@
     }
     .cq-pos-right {
         right: 5cqw;
+    }
+    :global(.slide-text *) {
+        font-family: inherit;
+        font-size: inherit;
+        text-transform: inherit;
+        font-weight: inherit;
+        letter-spacing: inherit;
+        line-height: inherit;
+        text-align: inherit;
+        -webkit-text-stroke: inherit;
+        paint-order: inherit;
+        filter: inherit;
+        margin: 0;
+        white-space: pre-wrap;
     }
 </style>

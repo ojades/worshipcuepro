@@ -58,14 +58,18 @@ export class PresentationState {
 
   rawCurrentText = $derived(
     this.currentSlideIndex !== -1
-      ? this.allSlidesInCue[this.currentSlideIndex].text
+      ? this.allSlidesInCue[this.currentSlideIndex].text ||
+          this.allSlidesInCue[this.currentSlideIndex].text_content ||
+          ""
       : "",
   );
 
   rawNextText = $derived(
     this.currentSlideIndex !== -1 &&
       this.currentSlideIndex + 1 < this.allSlidesInCue.length
-      ? this.allSlidesInCue[this.currentSlideIndex + 1].text
+      ? this.allSlidesInCue[this.currentSlideIndex + 1].text ||
+          this.allSlidesInCue[this.currentSlideIndex + 1].text_content ||
+          ""
       : "",
   );
 
@@ -105,7 +109,6 @@ export class PresentationState {
     }
   }
 
-  // --- NEW: Helper to auto-sync slide media to the unified background ---
   private syncSlideMedia(cue: any, slideId: string | null) {
     if (!slideId || !cue?.sections) return;
     for (const section of cue.sections) {
@@ -114,12 +117,11 @@ export class PresentationState {
         this.currentBackground = {
           url: slide.media.url,
           type: slide.media.type,
-          isMuted: true, // Default to muted
+          isMuted: true,
           isPlaying: true,
           playbackRate: 1.0,
         };
         this.isBackgroundCleared = false;
-        this.isTextCleared = true; // Clear text so media is fully visible
         return;
       }
     }
@@ -147,6 +149,7 @@ export class PresentationState {
       };
 
       this.isBackgroundCleared = false;
+
       this.isTextCleared = true;
 
       cue.sections = [
@@ -172,8 +175,14 @@ export class PresentationState {
     ) {
       const lines = cue.lines_per_slide || 0;
       cue.sections = parseLyrics(cue.raw_lyrics, lines);
+
+      if (!isSameCue) {
+        this.isTextCleared = false;
+      }
     } else if (!cue.sections) {
       cue.sections = [];
+    } else if (!isSameCue) {
+      this.isTextCleared = false;
     }
 
     this.activeCue = cue;
@@ -247,6 +256,14 @@ export class PresentationState {
       });
     } else if (cue.raw_lyrics !== undefined) {
       cue.sections = parseLyrics(cue.raw_lyrics, lines);
+    } else if (cue.type === "shoot" && cue.sections) {
+      cue.sections = cue.sections.map((section: any) => ({
+        ...section,
+        slides: section.slides.map((s: any) => ({
+          ...s,
+          text_content: s.text || s.text_content || "",
+        })),
+      }));
     } else {
       return;
     }

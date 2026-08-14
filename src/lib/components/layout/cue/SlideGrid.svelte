@@ -277,6 +277,7 @@
                                             class="absolute inset-0 bg-zinc-900 pointer-events-none"
                                         >
                                             {#if slide.media.type === "video"}
+                                                <!-- svelte-ignore a11y_media_has_caption -->
                                                 <video
                                                     src="{slide.media
                                                         .url}#t=0.1"
@@ -285,7 +286,7 @@
                                                     muted
                                                 ></video>
                                                 <div
-                                                    class="absolute bottom-2 left-2 bg-black/60 p-1.5 rounded-md backdrop-blur-sm"
+                                                    class="absolute bottom-2 left-2 bg-black/60 p-1.5 rounded-md backdrop-blur-sm z-20"
                                                 >
                                                     <Video
                                                         size={14}
@@ -299,7 +300,7 @@
                                                     class="w-full h-full object-cover opacity-60"
                                                 />
                                                 <div
-                                                    class="absolute bottom-2 left-2 bg-black/60 p-1.5 rounded-md backdrop-blur-sm"
+                                                    class="absolute bottom-2 left-2 bg-black/60 p-1.5 rounded-md backdrop-blur-sm z-20"
                                                 >
                                                     <ImageIcon
                                                         size={14}
@@ -308,21 +309,35 @@
                                                 </div>
                                             {/if}
                                         </div>
-                                    {:else}
-                                        <!-- Normal Text Preview with styling support for (Loading...) -->
-                                        <span
-                                            class="text-[15px] font-medium text-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed z-10 {slide.text ===
-                                            '(Loading...)'
-                                                ? 'animate-pulse text-zinc-600'
+                                    {/if}
+
+                                    <!-- Text Preview (Strip HTML for thumbnail readability) -->
+                                    {#if slide.text && slide.text !== "(Loading...)"}
+                                        <!-- Use {@html} to render Tiptap content correctly -->
+                                        <div
+                                            class="relative z-10 w-full text-[15px] font-medium text-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed {slide.media
+                                                ? 'text-white font-bold drop-shadow-md'
                                                 : ''}"
                                         >
-                                            {slide.text || "(Blank Slide)"}
+                                            {@html slide.text}
+                                        </div>
+                                    {:else if slide.text === "(Loading...)"}
+                                        <span
+                                            class="relative z-10 text-[15px] font-medium animate-pulse text-zinc-600"
+                                        >
+                                            (Loading...)
+                                        </span>
+                                    {:else if !slide.media}
+                                        <span
+                                            class="relative z-10 text-[15px] font-medium text-zinc-600"
+                                        >
+                                            (Blank Slide)
                                         </span>
                                     {/if}
 
                                     {#if slide.notes}
                                         <div
-                                            class="absolute bottom-3 right-3 w-2 h-2 rounded-full bg-yellow-500 shadow-sm z-10"
+                                            class="absolute bottom-3 right-3 w-2 h-2 rounded-full bg-yellow-500 shadow-sm z-20"
                                             title="Has stage notes"
                                         ></div>
                                     {/if}

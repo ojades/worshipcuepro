@@ -172,6 +172,9 @@ fn run_migrations(pool: &DbPool) -> Result<(), String> {
     )
     .map_err(|e| format!("Execute batch failed: {}", e))?;
 
+    let conn = pool.get().unwrap();
+    let _ = conn.execute("ALTER TABLE shoot_slides ADD COLUMN text_content TEXT", []);
+
     Ok(())
 }
 
