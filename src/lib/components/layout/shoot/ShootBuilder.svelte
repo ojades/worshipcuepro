@@ -51,6 +51,39 @@
         activeSlide: null as any,
     });
 
+    // --- NEW: Lazy Load Action for Media ---
+    function lazyLoadMedia(
+        node: HTMLImageElement | HTMLVideoElement,
+        src: string | null | undefined,
+    ) {
+        if (!src) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting) {
+                    node.src = src;
+                    observer.disconnect(); // Stop observing once loaded
+                }
+            },
+            { rootMargin: "300px" }, // Load slightly before it scrolls into view
+        );
+
+        observer.observe(node);
+
+        return {
+            update(newSrc: string | null | undefined) {
+                if (newSrc && newSrc !== src) {
+                    src = newSrc;
+                    // If it was already loaded, update it instantly
+                    if (node.src) node.src = newSrc;
+                }
+            },
+            destroy() {
+                observer.disconnect();
+            }
+        };
+    }
+
     async function saveShoot() {
         const savedId = await shootState.saveShoot(
             currentId,
@@ -236,13 +269,14 @@
                         {#if mediaItem.type === "video"}
                             <!-- svelte-ignore a11y_media_has_caption -->
                             <video
-                                src="{mediaItem.asset_url}#t=0.1"
+                                use:lazyLoadMedia="{mediaItem.asset_url}#t=0.1"
                                 class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity"
                                 muted
+                                preload="none"
                             ></video>
                         {:else}
                             <img
-                                src={mediaItem.asset_url}
+                                use:lazyLoadMedia={mediaItem.asset_url}
                                 alt="Asset"
                                 class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity"
                             />
@@ -358,13 +392,14 @@
                                 {#if slide.media_type === "video"}
                                     <!-- svelte-ignore a11y_media_has_caption -->
                                     <video
-                                        src="{slide.asset_url}#t=0.1"
+                                        use:lazyLoadMedia="{slide.asset_url}#t=0.1"
                                         class="absolute inset-0 w-full h-full object-cover opacity-50"
                                         muted
+                                        preload="none"
                                     ></video>
                                 {:else if slide.asset_url}
                                     <img
-                                        src={slide.asset_url}
+                                        use:lazyLoadMedia={slide.asset_url}
                                         alt="slide"
                                         class="absolute inset-0 w-full h-full object-cover opacity-50"
                                     />
