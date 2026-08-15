@@ -373,17 +373,31 @@
     :global(.stage-slide-text *),
     :global(.stage-next-text *) {
         font-family: inherit;
-        font-size: inherit;
         text-transform: inherit;
         font-weight: inherit;
         letter-spacing: inherit;
-        line-height: inherit;
         text-align: inherit;
         -webkit-text-stroke: inherit;
         paint-order: inherit;
         filter: inherit;
         margin: 0;
-        white-space: pre-wrap; /* Maintains manual line breaks */
+        white-space: pre-wrap;
+    }
+
+    :global(.stage-slide-text em) {
+        font-style: italic !important;
+    }
+    :global(.stage-slide-text h1) {
+        font-size: 1.8em;
+        line-height: 1.1;
+    }
+    :global(.stage-slide-text h2) {
+        font-size: 1.4em;
+        line-height: 1.2;
+    }
+    :global(.stage-slide-text h3) {
+        font-size: 1.2em;
+        line-height: 1.2;
     }
 
     .stage-reference {

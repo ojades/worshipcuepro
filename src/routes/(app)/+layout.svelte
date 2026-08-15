@@ -96,19 +96,7 @@
                 needRestart = true;
             }
 
-            let dirExists = false;
-
-            // Safely check if the directory exists
             if (coreWorkspace) {
-                try {
-                    dirExists = await exists(coreWorkspace);
-                } catch (fsError) {
-                    console.warn("Workspace check failed:", fsError);
-                    dirExists = false;
-                }
-            }
-
-            if (coreWorkspace && dirExists) {
                 if (needRestart) {
                     await updateStatus("Applying settings...");
                     await relaunch();

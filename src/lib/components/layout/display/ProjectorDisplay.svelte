@@ -328,16 +328,30 @@
     }
     :global(.slide-text *) {
         font-family: inherit;
-        font-size: inherit;
         text-transform: inherit;
         font-weight: inherit;
         letter-spacing: inherit;
-        line-height: inherit;
         text-align: inherit;
         -webkit-text-stroke: inherit;
         paint-order: inherit;
         filter: inherit;
         margin: 0;
         white-space: pre-wrap;
+    }
+
+    :global(.slide-text em) {
+        font-style: italic !important;
+    }
+    :global(.slide-text h1) {
+        font-size: 1.8em;
+        line-height: 1.1;
+    }
+    :global(.slide-text h2) {
+        font-size: 1.4em;
+        line-height: 1.2;
+    }
+    :global(.slide-text h3) {
+        font-size: 1.2em;
+        line-height: 1.2;
     }
 </style>

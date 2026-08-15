@@ -52,8 +52,12 @@ pub fn set_core_workspace(app_handle: tauri::AppHandle, path: String) -> Result<
 
     let config_path = app_dir.join("wcp_core.json");
 
-    // Write a simple JSON object to tell Rust where to boot next time
-    let json = format!("{{\"workspace_path\": \"{}\"}}", path.replace("\\", "\\\\"));
+    // FIX: Safely serialize using serde instead of manual string formatting
+    let config = CoreConfig {
+        workspace_path: Some(path),
+    };
+
+    let json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
 
     fs::write(config_path, json).map_err(|e| e.to_string())?;
 
