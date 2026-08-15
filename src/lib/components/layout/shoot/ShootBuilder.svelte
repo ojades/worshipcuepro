@@ -54,7 +54,7 @@
     // --- NEW: Lazy Load Action for Media ---
     function lazyLoadMedia(
         node: HTMLImageElement | HTMLVideoElement,
-        src: string | null | undefined,
+        src: string,
     ) {
         if (!src) return;
 
@@ -62,10 +62,10 @@
             (entries) => {
                 if (entries[0].isIntersecting) {
                     node.src = src;
-                    observer.disconnect(); // Stop observing once loaded
+                    observer.disconnect();
                 }
             },
-            { rootMargin: "300px" }, // Load slightly before it scrolls into view
+            { rootMargin: "300px" },
         );
 
         observer.observe(node);
@@ -80,7 +80,7 @@
             },
             destroy() {
                 observer.disconnect();
-            }
+            },
         };
     }
 
@@ -269,7 +269,7 @@
                         {#if mediaItem.type === "video"}
                             <!-- svelte-ignore a11y_media_has_caption -->
                             <video
-                                use:lazyLoadMedia="{mediaItem.asset_url}#t=0.1"
+                                use:lazyLoadMedia={`${mediaItem.asset_url}#t=0.1`}
                                 class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity"
                                 muted
                                 preload="none"
@@ -392,7 +392,7 @@
                                 {#if slide.media_type === "video"}
                                     <!-- svelte-ignore a11y_media_has_caption -->
                                     <video
-                                        use:lazyLoadMedia="{slide.asset_url}#t=0.1"
+                                        use:lazyLoadMedia={`${slide.asset_url}#t=0.1`}
                                         class="absolute inset-0 w-full h-full object-cover opacity-50"
                                         muted
                                         preload="none"
