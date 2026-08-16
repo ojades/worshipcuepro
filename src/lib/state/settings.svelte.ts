@@ -1,4 +1,4 @@
-// /src/lib/state/settings.svelte.ts
+// src/lib/state/settings.svelte.ts
 import { browser } from "$app/environment";
 import type { AppSettings, TextFormatConfig } from "$lib/types/models";
 import { mkdir } from "@tauri-apps/plugin-fs";
@@ -53,63 +53,75 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 class SettingsState {
   config = $state<AppSettings>({ ...DEFAULT_SETTINGS });
+  workspacePath = $state<string>("");
 
-  constructor() {
-    this.loadSettings();
-  }
-
-  private loadSettings() {
+  async init() {
     if (!browser) return;
 
     try {
-      const stored = localStorage.getItem("wcp_settings");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        this.config = { ...DEFAULT_SETTINGS, ...parsed };
+      const dbConfig = await this.getDbSetting("app_config");
+
+      if (dbConfig) {
+        this.config = { ...DEFAULT_SETTINGS, ...JSON.parse(dbConfig) };
+      } else {
+        const localConfig = localStorage.getItem("wcp_settings");
+        if (localConfig) {
+          console.log(
+            "[Settings] Migrating localStorage settings to SQLite Database...",
+          );
+          this.config = { ...DEFAULT_SETTINGS, ...JSON.parse(localConfig) };
+          await this.saveSettings();
+        }
+      }
+
+      if (localStorage.getItem("wcp_settings")) {
+        localStorage.removeItem("wcp_settings");
+        console.log("[Settings] Cleared legacy localStorage data.");
       }
     } catch (e) {
-      console.error("Failed to load settings:", e);
+      console.error("Failed to initialize settings from DB:", e);
     }
   }
 
-  private saveSettings() {
-    if (browser) {
-      localStorage.setItem("wcp_settings", JSON.stringify(this.config));
+  private async saveSettings() {
+    if (!browser) return;
+    try {
+      await this.setDbSetting("app_config", JSON.stringify(this.config));
+    } catch (e) {
+      console.error("Failed to save settings to DB:", e);
     }
   }
 
   update(updates: Partial<AppSettings>) {
     this.config = { ...this.config, ...updates };
-    this.saveSettings();
+    this.saveSettings().catch(console.error);
   }
 
-  clearLocalCache() {
+  async clearLocalCache() {
     if (!browser) return;
-    const preservedWorkspace = this.config.workspacePath;
 
+    this.config = { ...DEFAULT_SETTINGS };
     localStorage.clear();
-
-    this.config = { ...DEFAULT_SETTINGS, workspacePath: preservedWorkspace };
-    this.saveSettings();
+    await this.saveSettings();
   }
 
   exportSettings(): string {
-    const { workspacePath, ...settingsToExport } = this.config;
-    return JSON.stringify(settingsToExport, null, 2);
+    return JSON.stringify(this.config, null, 2);
   }
 
   importSettings(jsonString: string): boolean {
     try {
       const parsed = JSON.parse(jsonString);
-      const preservedWorkspace = this.config.workspacePath;
+
+      // Clean out legacy workspace paths just in case an old export had them
+      delete parsed.workspacePath;
 
       this.config = {
         ...DEFAULT_SETTINGS,
         ...parsed,
-        workspacePath: preservedWorkspace,
       };
 
-      this.saveSettings();
+      this.saveSettings().catch(console.error);
       return true;
     } catch (e) {
       console.error("Failed to import settings:", e);
@@ -129,9 +141,6 @@ class SettingsState {
     return dirPath;
   }
 
-  /**
-   * Retrieves a specific configuration value from the SQLite settings table.
-   */
   async getDbSetting(key: string, defaultValue: string = ""): Promise<string> {
     try {
       const res = await getDbSettingAPI(key);
@@ -142,9 +151,6 @@ class SettingsState {
     }
   }
 
-  /**
-   * Saves or updates a specific configuration value in the SQLite settings table.
-   */
   async setDbSetting(key: string, value: string): Promise<boolean> {
     try {
       await setDbSettingAPI(key, value);

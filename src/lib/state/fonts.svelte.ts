@@ -46,7 +46,6 @@ class FontState {
     "Trebuchet MS",
   ];
 
-  // Combined list for dropdowns
   availableFonts = $derived(
     [
       ...this.systemFonts.map((f) => ({ name: f, family: f, isCustom: false })),
@@ -58,9 +57,25 @@ class FontState {
     ].sort((a, b) => a.name.localeCompare(b.name)),
   );
 
-  /**
-   * Checks the workspace and copies bundled fonts if they don't exist yet.
-   */
+  private async safeFetchFont(fontName: string): Promise<ArrayBuffer | null> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    try {
+      const response = await fetch(`/fonts/${fontName}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) return null;
+      return await response.arrayBuffer();
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.warn(`[Fonts] Failed to fetch bundled font ${fontName}.`);
+      return null;
+    }
+  }
+
   private async seedDefaultFonts(workspace: string) {
     try {
       const fontsDir = await join(workspace, "fonts");
@@ -68,39 +83,32 @@ class FontState {
         await mkdir(fontsDir, { recursive: true });
       }
 
-      for (const fontName of BUNDLED_FONTS) {
+      const seedPromises = BUNDLED_FONTS.map(async (fontName) => {
         const targetPath = await join(fontsDir, fontName);
-
-        // Only seed if the file isn't already in the workspace
         if (!(await exists(targetPath))) {
-          // Fetch the file from SvelteKit's static assets
-          const response = await fetch(`/fonts/${fontName}`);
-
-          if (response.ok) {
-            // Convert to a Uint8Array and write to the filesystem
-            const buffer = await response.arrayBuffer();
+          const buffer = await this.safeFetchFont(fontName);
+          if (buffer) {
             await writeFile(targetPath, new Uint8Array(buffer));
             console.log(`Seeded default font: ${fontName}`);
-          } else {
-            console.warn(
-              `Bundled font not found in static folder: ${fontName}`,
-            );
           }
         }
-      }
+      });
+
+      await Promise.all(seedPromises);
     } catch (e) {
       console.error("Failed to seed default fonts:", e);
     }
   }
 
-  /**
-   * Scans {workspace}fonts, loads all font files into browser memory
-   */
   async loadFonts() {
-    const workspace = settingsState.config.workspacePath;
+    const workspace = settingsState.workspacePath;
     if (!workspace) return;
 
-    await this.seedDefaultFonts(workspace);
+    try {
+      await this.seedDefaultFonts(workspace);
+    } catch (e) {
+      console.error("Seed error caught in loadFonts:", e);
+    }
 
     try {
       const fontsDir = await join(workspace, "fonts");
@@ -111,19 +119,25 @@ class FontState {
 
       const files = await readDir(fontsDir);
       const loaded: CustomFont[] = [];
+      let cssRules = "";
 
+      // FIX: Instantly generate CSS instead of blocking JS memory
       for (const file of files) {
         if (!file.name) continue;
         const ext = file.name.split(".").pop()?.toLowerCase();
+
         if (["ttf", "otf", "woff", "woff2"].includes(ext || "")) {
           const fontName = file.name.replace(/\.[^/.]+$/, "");
           const filePath = await join(fontsDir, file.name);
           const assetUrl = convertFileSrc(filePath);
 
-          // Dynamically register font with Web API
-          const fontFace = new FontFace(fontName, `url("${assetUrl}")`);
-          await fontFace.load();
-          document.fonts.add(fontFace);
+          cssRules += `
+            @font-face {
+              font-family: "${fontName}";
+              src: url("${assetUrl}");
+              font-display: swap;
+            }
+          `;
 
           loaded.push({
             name: fontName,
@@ -133,40 +147,40 @@ class FontState {
         }
       }
 
+      // Inject the CSS directly into the document <head>
+      let styleEl = document.getElementById("wcp-custom-fonts");
+      if (!styleEl) {
+        styleEl = document.createElement("style");
+        styleEl.id = "wcp-custom-fonts";
+        document.head.appendChild(styleEl);
+      }
+      styleEl.innerHTML = cssRules;
+
       this.customFonts = loaded.sort((a, b) => a.name.localeCompare(b.name));
     } catch (e) {
       console.error("Failed to load workspace fonts:", e);
     }
   }
 
-  /**
-   * Import a font file from user's machine into workspace
-   */
   async importFont() {
     const selected = await open({
-      multiple: true, // Allow multiple file selection
+      multiple: true,
       filters: [
         { name: "Font Files", extensions: ["ttf", "otf", "woff", "woff2"] },
       ],
     });
 
-    // Handle cancellation or empty selection
     if (!selected || selected.length === 0) return;
 
-    const workspace = settingsState.config.workspacePath;
+    const workspace = settingsState.workspacePath;
     if (!workspace) return;
 
     const fontsDir = await join(workspace, "fonts");
-
-    // Ensure the fonts directory exists once before the loop
     await mkdir(fontsDir, { recursive: true });
 
-    // Normalize to an array (just in case the API returns a single string fallback)
     const filePaths = Array.isArray(selected) ? selected : [selected];
 
-    // Loop through each selected file and copy it to the workspace
     for (const filePath of filePaths) {
-      // Handle potential Tauri v2 object returns, though usually it's a string path here
       const pathStr =
         typeof filePath === "string" ? filePath : (filePath as any).path;
       if (!pathStr) continue;
@@ -181,7 +195,6 @@ class FontState {
       }
     }
 
-    // Reload fonts across the app once all files are copied
     await this.loadFonts();
   }
 }

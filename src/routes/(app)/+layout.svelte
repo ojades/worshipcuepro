@@ -18,7 +18,6 @@
     import { shootState } from "$lib/state/shoot.svelte";
     import GlobalShortcuts from "$lib/components/layout/GlobalShortcuts.svelte";
     import OnboardingSetup from "$lib/components/layout/OnboardingSetup.svelte";
-    import { exists } from "@tauri-apps/plugin-fs";
     import { dev } from "$app/environment";
     import { fontState } from "$lib/state/fonts.svelte";
     import {
@@ -33,7 +32,6 @@
     let needsSetup = $state(false);
     let initStatus = $state("INITIALIZING ENGINE...");
 
-    // Updates the Svelte state and attempts to dispatch to the Splash Screen window
     async function updateStatus(message: string) {
         initStatus = message.toUpperCase();
         console.log(`[Startup] ${initStatus}`);
@@ -44,9 +42,11 @@
         }
     }
 
-    // DRY function to load everything
     async function loadAppResources() {
         try {
+            await updateStatus("Loading Settings...");
+            await settingsState.init(); // <-- FIX: MUST wait for settings to load first
+
             await updateStatus("Importing NKJV...");
             await bibleState.importXmlBible(NKJV, "NKJV");
 
@@ -77,31 +77,25 @@
 
     onMount(async () => {
         try {
-            let needRestart = false;
             let coreWorkspace = await getCoreWorkspaceAPI();
 
-            const legacyWorkspace = settingsState.config?.workspacePath;
+            // Check legacy local storage one last time for migration
+            const legacySettingsStr = localStorage.getItem("wcp_settings");
+            const legacyWorkspace = legacySettingsStr
+                ? JSON.parse(legacySettingsStr).workspacePath
+                : null;
 
             if (!coreWorkspace && legacyWorkspace) {
                 console.log(
-                    "[Migration] Moving workspace path from localStorage to Rust Core Config...",
+                    "[Migration] Moving workspace path to Rust Core Config...",
                 );
                 await setCoreWorkspaceAPI(legacyWorkspace);
                 coreWorkspace = legacyWorkspace;
-
-                const newSettings = { ...settingsState.config };
-                delete newSettings.workspacePath;
-                settingsState.update(newSettings);
-
-                needRestart = true;
             }
 
             if (coreWorkspace) {
-                if (needRestart) {
-                    await updateStatus("Applying settings...");
-                    await relaunch();
-                    return;
-                }
+                // FIX: Assign locally, DO NOT use settingsState.update()
+                settingsState.workspacePath = coreWorkspace;
 
                 await updateStatus("Connecting to Database...");
                 await loadAppResources();
@@ -114,7 +108,6 @@
                     }
                 }, 500);
             } else {
-                // No workspace found in Rust OR legacy JS. Show setup.
                 needsSetup = true;
                 setTimeout(async () => {
                     try {

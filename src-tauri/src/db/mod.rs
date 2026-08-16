@@ -42,7 +42,7 @@ pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
     let manager = SqliteConnectionManager::file(&db_path).with_init(|c| {
         c.execute_batch(
             "
-                PRAGMA journal_mode = WAL;
+                PRAGMA journal_mode = DELETE;
                 PRAGMA synchronous = NORMAL;
                 PRAGMA busy_timeout = 5000;
                 PRAGMA mmap_size = 268435456;

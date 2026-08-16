@@ -122,7 +122,7 @@ class MediaState {
 
     const results = await fetchAllMediaAPI();
 
-    const workspace = settingsState.config.workspacePath;
+    const workspace = settingsState.workspacePath;
     let mediaDirPath = workspace ? await join(workspace, "media") : "";
     let thumbDirPath = workspace ? await join(mediaDirPath, "thumbnails") : "";
 
@@ -165,7 +165,7 @@ class MediaState {
     this._isProcessingThumbs = true;
 
     try {
-      const workspace = settingsState.config.workspacePath;
+      const workspace = settingsState.workspacePath;
       if (!workspace) return;
 
       const mediaDirPath = await join(workspace, "media");
@@ -254,7 +254,7 @@ class MediaState {
   ) {
     this.isDownloadingYoutube = true;
     try {
-      const workspace = settingsState.config.workspacePath;
+      const workspace = settingsState.workspacePath;
       if (!workspace) throw new Error("Workspace path is not configured.");
 
       // 1. Call Rust to download the file directly to the workspace
@@ -316,7 +316,7 @@ class MediaState {
     if (files.length === 0) return;
 
     this.isImporting = true;
-    const workspace = settingsState.config.workspacePath;
+    const workspace = settingsState.workspacePath;
     let mediaDirPath = "";
 
     if (workspace) {
@@ -395,7 +395,7 @@ class MediaState {
     await bulkDeleteMediaAPI(ids);
 
     // 3. Cleanup local files
-    const workspace = settingsState.config.workspacePath;
+    const workspace = settingsState.workspacePath;
     if (workspace) {
       const mediaDir = await join(workspace, "media");
       const thumbDir = await join(mediaDir, "thumbnails");

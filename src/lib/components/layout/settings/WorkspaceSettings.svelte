@@ -14,7 +14,7 @@
     import SettingsIcon from "@lucide/svelte/icons/settings";
     import { setCoreWorkspaceAPI } from "$lib/commands/settings-db";
 
-    let workspacePath = $derived(settingsState.config.workspacePath);
+    let workspacePath = $derived(settingsState.workspacePath);
 
     // Confirmation state for clearing cache
     let confirmClear = $state(false);
