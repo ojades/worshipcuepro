@@ -4,40 +4,56 @@
     import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
     import { systemState } from "$lib/state/system.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
-    import { relaunch } from "@tauri-apps/plugin-process"; // <-- NEW: Import relaunch
+    import { relaunch } from "@tauri-apps/plugin-process";
 
     import Cloud from "@lucide/svelte/icons/cloud";
+    import Database from "@lucide/svelte/icons/database";
     import Info from "@lucide/svelte/icons/info";
     import Eraser from "@lucide/svelte/icons/eraser";
     import Download from "@lucide/svelte/icons/download";
     import Upload from "@lucide/svelte/icons/upload";
     import SettingsIcon from "@lucide/svelte/icons/settings";
-    import { setCoreWorkspaceAPI } from "$lib/commands/settings-db";
+    import {
+        setCoreWorkspaceAPI,
+        getCoreWorkspaceAPI,
+    } from "$lib/commands/settings-db";
+    import { onMount } from "svelte";
+    import { invoke } from "@tauri-apps/api/core";
 
     let workspacePath = $derived(settingsState.workspacePath);
+    let dbPath = $state<string | null>(null);
 
     // Confirmation state for clearing cache
     let confirmClear = $state(false);
     let clearTimer: ReturnType<typeof setTimeout>;
+
+    onMount(async () => {
+        // Fetch the raw config from Rust to see if there is an active split DB path
+        try {
+            const configStr = await readTextFile("wcp_core.json", {
+                baseDir:
+                    window.__TAURI_INTERNALS__.plugins.path.BaseDirectory
+                        .AppData,
+            });
+            const config = JSON.parse(configStr);
+            dbPath = config.db_path || null;
+        } catch (e) {
+            // It's okay if this fails or falls back
+        }
+    });
 
     async function handleSelectWorkspace() {
         try {
             const selectedDir = await open({
                 directory: true,
                 multiple: false,
-                title: "Select Workspace Folder (e.g., Dropbox or Google Drive)",
+                title: "Select Media/Fonts Workspace Folder",
             });
 
             if (selectedDir && typeof selectedDir === "string") {
                 const savePath =
                     await settingsState.parseWorkspaceDir(selectedDir);
-
-                await setCoreWorkspaceAPI(savePath);
-
-                // Update local state just in case, but we are about to restart
-                settingsState.update({ workspacePath: savePath });
-
-                // <-- NEW: Restart the app to mount the Rust DB in the new location
+                await setCoreWorkspaceAPI(savePath, dbPath);
                 await relaunch();
             }
         } catch (error) {
@@ -48,16 +64,36 @@
         }
     }
 
+    async function handleSelectDatabase() {
+        try {
+            const selectedDir = await open({
+                directory: true,
+                multiple: false,
+                title: "Select Cloud Database Location (e.g. Dropbox)",
+            });
+
+            if (selectedDir && typeof selectedDir === "string") {
+                const saveDbPath =
+                    await settingsState.parseWorkspaceDir(selectedDir);
+                // Save the existing media path, but apply the new DB path
+                await setCoreWorkspaceAPI(
+                    settingsState.workspacePath,
+                    saveDbPath,
+                );
+                await relaunch();
+            }
+        } catch (error) {
+            systemState.addAlert({
+                message: "Failed to set new database directory.",
+                type: "error",
+            });
+        }
+    }
+
     async function handleResetWorkspace() {
         try {
-            // Passing an empty string/null depends on your Rust implementation,
-            // but assuming `parseWorkspaceDir` or `setCoreWorkspaceAPI` handles defaults:
-            // (If setCoreWorkspaceAPI fails with empty string, you can add a Rust command to delete the core file)
-            const defaultPath = await settingsState.parseWorkspaceDir(""); // Or however your default is parsed
-            await setCoreWorkspaceAPI(defaultPath);
-            settingsState.update({ workspacePath: null });
-
-            // <-- NEW: Restart the app to mount the Rust DB back to the default AppData folder
+            const defaultPath = await settingsState.parseWorkspaceDir("");
+            await setCoreWorkspaceAPI(defaultPath, null); // Wipe out the split DB path on reset
             await relaunch();
         } catch (error) {
             systemState.addAlert({
@@ -72,7 +108,7 @@
             confirmClear = true;
             clearTimer = setTimeout(() => {
                 confirmClear = false;
-            }, 3000); // Reset button after 3 seconds
+            }, 3000);
         } else {
             clearTimeout(clearTimer);
             confirmClear = false;
@@ -149,27 +185,33 @@
             Workspace & Sync
         </h1>
         <p class="text-sm text-muted-foreground leading-relaxed">
-            Select a shared folder on your computer to store your database and
-            media files in one place. Use a folder synced to <strong
-                class="text-foreground">Dropbox</strong
-            >
-            or <strong class="text-foreground">Google Drive</strong>, to access
-            you media and lyrics library across multiple computers.
+            Select shared folders on your computer to store your database and
+            media files. For best results, use a local sync tool like Syncthing
+            for Media, and <strong class="text-foreground">Dropbox</strong> for the
+            Database.
         </p>
     </div>
 
     <!-- Active Workspace Card -->
     <div
-        class="bg-card border border-border rounded-xl p-6 space-y-5 shadow-sm"
+        class="bg-card border border-border rounded-xl p-6 space-y-6 shadow-sm"
     >
+        <!-- Media Path -->
         <div class="flex items-start gap-4">
-            <div class="p-3 bg-neon-violet/10 text-neon-violet rounded-lg">
+            <div class="p-3 bg-neon-cyan/10 text-neon-cyan rounded-lg">
                 <Cloud size={24} />
             </div>
-            <div class="space-y-1 flex-1">
-                <h3 class="font-semibold text-foreground">
-                    Active Workspace Directory
-                </h3>
+            <div class="space-y-2 flex-1">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-semibold text-foreground">
+                        Resources Location
+                    </h3>
+                    <button
+                        onclick={handleSelectWorkspace}
+                        class="text-xs font-bold uppercase text-neon-cyan hover:text-white transition-colors"
+                        >Change</button
+                    >
+                </div>
                 <p
                     class="text-xs text-muted-foreground font-mono bg-background border border-border p-2 rounded-md break-all"
                 >
@@ -179,19 +221,42 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-3 pt-2">
-            <button
-                onclick={handleSelectWorkspace}
-                class="px-4 py-2 bg-foreground text-background font-semibold rounded-lg text-sm hover:bg-zinc-200 transition-colors cursor-pointer"
-            >
-                Select Workspace Folder
-            </button>
+        <!-- Database Path -->
+        <div class="flex items-start gap-4 pt-2 border-t border-border">
+            <div class="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg">
+                <Database size={24} />
+            </div>
+            <div class="space-y-2 flex-1">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-semibold text-foreground">
+                        Database Location
+                    </h3>
+                    <button
+                        onclick={handleSelectDatabase}
+                        class="text-xs font-bold uppercase text-emerald-500 hover:text-white transition-colors"
+                        >Change</button
+                    >
+                </div>
+                <p
+                    class="text-xs text-muted-foreground font-mono bg-background border border-border p-2 rounded-md break-all"
+                >
+                    {dbPath || workspacePath || "Using default local storage."}
+                </p>
+                {#if !dbPath}
+                    <p class="text-[10px] text-zinc-500">
+                        Currently synced alongside Resources.
+                    </p>
+                {/if}
+            </div>
+        </div>
+
+        <div class="flex justify-end pt-2">
             {#if workspacePath}
                 <button
                     onclick={handleResetWorkspace}
-                    class="px-4 py-2 border border-border text-muted-foreground font-semibold rounded-lg text-sm hover:text-red-400 hover:border-red-400/50 transition-colors cursor-pointer"
+                    class="px-4 py-2 border border-border text-muted-foreground font-semibold rounded-lg text-sm hover:text-red-400 hover:border-red-400/50 hover:bg-red-950/20 transition-colors cursor-pointer"
                 >
-                    Reset to Default
+                    Reset All to Default
                 </button>
             {/if}
         </div>
@@ -251,8 +316,7 @@
         </div>
         <button
             onclick={handleClearCache}
-            class="px-4 py-2 font-semibold rounded-lg text-sm transition-all duration-200 cursor-pointer whitespace-nowrap mt-1
-            {confirmClear
+            class="px-4 py-2 font-semibold rounded-lg text-sm transition-all duration-200 cursor-pointer whitespace-nowrap mt-1 {confirmClear
                 ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20'
                 : 'border border-border text-foreground hover:bg-zinc-800'}"
         >
