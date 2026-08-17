@@ -11,6 +11,7 @@ pub type DbPool = r2d2::Pool<SqliteConnectionManager>;
 #[derive(Serialize, Deserialize, Default)]
 struct CoreConfig {
     workspace_path: Option<String>,
+    db_path: Option<String>,
 }
 
 pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
@@ -22,21 +23,33 @@ pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
     fs::create_dir_all(&app_dir).map_err(|e| format!("Failed to create app data dir: {}", e))?;
 
     let config_path = app_dir.join("wcp_core.json");
-    let db_dir = match fs::read_to_string(&config_path) {
-        Ok(json) => {
-            let config: CoreConfig = serde_json::from_str(&json).unwrap_or_default();
-            config.workspace_path.map(PathBuf::from)
-        }
-        Err(_) => None,
+
+    // Read the config safely
+    let config: CoreConfig = match fs::read_to_string(&config_path) {
+        Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
+        Err(_) => CoreConfig::default(),
     };
 
-    let target_dir = db_dir.unwrap_or_else(|| app_dir.clone());
+    // Media directory logic
+    let media_dir = config
+        .workspace_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| app_dir.clone());
 
-    fs::create_dir_all(&target_dir)
-        .map_err(|e| format!("Failed to create workspace dir: {}", e))?;
+    let db_dir = config
+        .db_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| media_dir.clone());
 
-    let db_path = target_dir.join("worshipcue.db");
+    fs::create_dir_all(&media_dir).unwrap_or_default();
+    fs::create_dir_all(&db_dir).map_err(|e| format!("Failed to create DB dir: {}", e))?;
 
+    let db_path = db_dir.join("worshipcue.db");
+
+    println!(
+        "[WorshipCuePro] Media Workspace mounting at: {:?}",
+        media_dir
+    );
     println!("[WorshipCuePro] Rust DB Engine mounting at: {:?}", db_path);
 
     let manager = SqliteConnectionManager::file(&db_path).with_init(|c| {
@@ -58,10 +71,7 @@ pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
         .build(manager)
         .map_err(|e| format!("Failed to create pool: {}", e))?;
 
-    // 4. Run Schema Migrations
     run_migrations(&pool).map_err(|e| format!("Migration failed: {}", e))?;
-
-    // 5. Run Silent Auto-Migrations for FTS
     auto_migrate_fts(&pool).map_err(|e| format!("FTS Auto-migration failed: {}", e))?;
 
     Ok(pool)

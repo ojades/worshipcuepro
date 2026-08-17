@@ -4,6 +4,8 @@
     import type { PresentationPayload } from "$lib/types/models";
     import StageDisplay from "$lib/components/layout/display/StageDisplay.svelte";
     import { fontState } from "$lib/state/fonts.svelte";
+    import { getCoreWorkspaceAPI } from "$lib/commands/settings-db";
+    import { settingsState } from "$lib/state/settings.svelte";
 
     // --- State ---
     let presentationPayload = $state<PresentationPayload | null>(null);
@@ -24,7 +26,12 @@
         typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
     onMount(async () => {
-        await fontState.loadFonts();
+        const coreWorkspace = await getCoreWorkspaceAPI();
+        if (coreWorkspace) {
+            settingsState.workspacePath = coreWorkspace;
+
+            await fontState.loadFonts();
+        }
         if (isTauri()) {
             // --- NATIVE TAURI MODE ---
             const { listen, emit } = await import("@tauri-apps/api/event");

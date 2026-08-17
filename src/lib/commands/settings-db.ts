@@ -12,8 +12,11 @@ export async function setDbSettingAPI(
   await invoke("set_db_setting", { key, value });
 }
 
-export async function setCoreWorkspaceAPI(path: string): Promise<void> {
-  await invoke("set_core_workspace", { path });
+export async function setCoreWorkspaceAPI(
+  path: string,
+  dbPath: string | null = null,
+): Promise<void> {
+  await invoke("set_core_workspace", { path, dbPath });
 }
 
 export async function getCoreWorkspaceAPI(): Promise<string | null> {

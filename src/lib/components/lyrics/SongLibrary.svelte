@@ -1,6 +1,12 @@
 <!-- src/lib/components/lyrics/SongLibrary.svelte -->
 <script lang="ts">
-    import { Search, Plus, ListPlus, CloudDownload } from "@lucide/svelte";
+    import {
+        Search,
+        Plus,
+        ListPlus,
+        CloudDownload,
+        Trash2,
+    } from "@lucide/svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import { playlists } from "$lib/state/playlists.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
@@ -18,15 +24,18 @@
         onSongChange,
         onAddSong,
         onOpenImport,
+        onDeleteSong, // NEW PROP
     } = $props<{
         songs: Song[];
         selectedSongId: string | null;
         onSongChange: (id: string) => void;
         onAddSong: () => void;
         onOpenImport: () => void;
+        onDeleteSong: (id: string) => void;
     }>();
 
     let searchQuery = $state("");
+    let deletingSongId = $state<string | null>(null); // NEW STATE
 
     let filteredSongs = $derived(
         !searchQuery.trim()
@@ -85,7 +94,7 @@
                 type="text"
                 placeholder="Search songs..."
                 bind:value={searchQuery}
-                class="w-full bg-card border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-foreground placeholder-muted-foreground focus:border-neon-violet focus:ring-1 focus:ring-neon-violet transition-colors outline-hidden"
+                class="w-full bg-card border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-foreground placeholder-muted-foreground focus:border-neon-violet focus:ring-1 focus:ring-neon-violet transition-colors outline-none"
             />
         </div>
     </div>
@@ -102,7 +111,10 @@
                 >
                     <!-- Main Clickable Area -->
                     <button
-                        onclick={() => onSongChange(song.id)}
+                        onclick={() => {
+                            deletingSongId = null; // Reset delete state on navigate
+                            onSongChange(song.id);
+                        }}
                         class="flex-1 text-left min-w-0 pr-2 cursor-pointer outline-none"
                     >
                         <div
@@ -113,50 +125,101 @@
                         <div
                             class="text-xs text-muted-foreground mt-0.5 truncate"
                         >
-                            {#if song.artist}{song.artist}
-                            {/if}
+                            {#if song.artist}{song.artist}{/if}
                         </div>
                     </button>
 
-                    <!-- Add to Playlist Inline Action -->
-                    <div
-                        class="relative opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                    >
-                        <select
-                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                            title="Add to playlist"
-                            onchange={(e) => {
-                                const target = e.target as HTMLSelectElement;
-                                if (target.value) {
-                                    playlists.addCueToPlaylist(
-                                        target.value,
-                                        song.id,
-                                        "song",
-                                    );
-                                    target.value = "";
-                                }
-                            }}
+                    <!-- NEW: Inline Delete Confirmation -->
+                    {#if deletingSongId === song.id}
+                        <div
+                            class="flex items-center gap-1 animate-in fade-in slide-in-from-right-2 bg-red-950/40 border border-red-900/50 rounded p-1 shrink-0"
                         >
-                            <option value="" disabled selected>Add...</option>
-                            {#if presentation.activePlaylist}
-                                <option value={presentation.activePlaylist.id}>
-                                    Active: {presentation.activePlaylist.name}
-                                </option>
-                            {/if}
-                            <optgroup label="All Playlists">
-                                {#each playlists.allPlaylists as p}
-                                    <option value={p.id}>{p.name}</option>
-                                {/each}
-                            </optgroup>
-                        </select>
+                            <button
+                                onclick={(e) => {
+                                    e.stopPropagation();
+                                    deletingSongId = null;
+                                }}
+                                class="text-[10px] uppercase font-bold text-zinc-400 hover:text-white px-2 py-1 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onclick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteSong(song.id);
+                                    deletingSongId = null;
+                                }}
+                                class="text-[10px] uppercase font-bold text-red-500 hover:text-white bg-red-500/20 hover:bg-red-500 rounded px-2 py-1 transition-colors"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    {:else}
+                        <!-- Hover Actions -->
+                        <div
+                            class="relative opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 flex items-center"
+                        >
+                            <!-- Delete Button -->
+                            <button
+                                class="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-zinc-700 rounded transition-colors mr-0.5"
+                                aria-label="Delete Song"
+                                title="Delete Song"
+                                onclick={(e) => {
+                                    e.stopPropagation();
+                                    deletingSongId = song.id;
+                                }}
+                            >
+                                <Trash2 size={16} />
+                            </button>
 
-                        <button
-                            class="p-1.5 text-neon-violet hover:text-neon-cyan hover:bg-zinc-700 rounded transition-colors"
-                            aria-label="Add to Playlist"
-                        >
-                            <ListPlus size={20} />
-                        </button>
-                    </div>
+                            <!-- Add to Playlist Action -->
+                            <div class="relative">
+                                <select
+                                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                    title="Add to playlist"
+                                    onchange={(e) => {
+                                        const target =
+                                            e.target as HTMLSelectElement;
+                                        if (target.value) {
+                                            playlists.addCueToPlaylist(
+                                                target.value,
+                                                song.id,
+                                                "song",
+                                            );
+                                            target.value = "";
+                                        }
+                                    }}
+                                >
+                                    <option value="" disabled selected
+                                        >Add...</option
+                                    >
+                                    {#if presentation.activePlaylist}
+                                        <option
+                                            value={presentation.activePlaylist
+                                                .id}
+                                        >
+                                            Active: {presentation.activePlaylist
+                                                .name}
+                                        </option>
+                                    {/if}
+                                    <optgroup label="All Playlists">
+                                        {#each playlists.allPlaylists as p}
+                                            <option value={p.id}
+                                                >{p.name}</option
+                                            >
+                                        {/each}
+                                    </optgroup>
+                                </select>
+
+                                <button
+                                    class="p-1.5 text-neon-violet hover:text-neon-cyan hover:bg-zinc-700 rounded transition-colors"
+                                    aria-label="Add to Playlist"
+                                >
+                                    <ListPlus size={18} />
+                                </button>
+                            </div>
+                        </div>
+                    {/if}
                 </div>
             {/each}
 

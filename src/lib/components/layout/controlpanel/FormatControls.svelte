@@ -1,17 +1,6 @@
 <!-- /src/lib/components/layout/controlpanel/FormatControls.svelte -->
 <script lang="ts">
-    import {
-        Type,
-        AlignVerticalJustifyStart,
-        AlignVerticalJustifyCenter,
-        AlignVerticalJustifyEnd,
-        Monitor,
-        User,
-        X,
-        Settings2,
-    } from "@lucide/svelte";
-    import { slide } from "svelte/transition";
-    import { settingsState } from "$lib/state/settings.svelte";
+    import { Type, X } from "@lucide/svelte";
     import TextFormatmenu from "./formatControlMenus/TextFormatmenu.svelte";
 
     let isOpen = $state(false);

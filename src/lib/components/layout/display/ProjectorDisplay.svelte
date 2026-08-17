@@ -1,11 +1,8 @@
 <!-- src/lib/components/layout/display/ProjectorDisplay.svelte -->
 <script lang="ts">
     import { settingsState } from "$lib/state/settings.svelte";
-    import type {
-        PresentationPayload,
-        TextFormatConfig,
-    } from "$lib/types/models";
-    import { onMount, onDestroy } from "svelte";
+    import type { PresentationPayload } from "$lib/types/models";
+    import { onMount } from "svelte";
     import { listen } from "@tauri-apps/api/event";
 
     export interface ExtendedPayload extends PresentationPayload {
@@ -41,6 +38,11 @@
             --font-scale: ${(display.projector?.textScale ?? 1) * (display.projector?.textFormat?.fontSizeScale ?? 1)};
             --drop-shadow: ${display.projector?.textFormat?.dropShadow ? "drop-shadow(0 4px 6px rgba(0,0,0,0.8))" : "none"};
             --v-gap: ${display.projector?.vGap ?? 5}cqh;
+
+            --ref-font-family: "${display.projector?.textFormat?.referenceFontFamily ?? display.projector?.textFormat?.fontFamily ?? "sans-serif"}", sans-serif;
+            --ref-font-weight: ${display.projector?.textFormat?.referenceFontWeight ?? "bold"};
+            --ref-text-transform: ${display.projector?.textFormat?.referenceTextTransform ?? "uppercase"};
+            --ref-font-scale: ${(display.projector?.textScale ?? 1) * (display.projector?.textFormat?.referenceFontSizeScale ?? 1)};
         `);
 
     // Dynamic classes
@@ -72,10 +74,14 @@
         switch (display.projector?.referencePosition) {
             case "bottom-left":
                 return "cq-pos-bottom cq-pos-left text-left";
+            case "bottom-center":
+                return "cq-pos-bottom left-0 right-0 text-center";
             case "top-right":
                 return "cq-pos-top cq-pos-right text-right";
             case "top-left":
                 return "cq-pos-top cq-pos-left text-left";
+            case "top-center":
+                return "cq-pos-top left-0 right-0 text-center";
             case "bottom-right":
             default:
                 return "cq-pos-bottom cq-pos-right text-right";
@@ -203,7 +209,7 @@
             {#if display.liveText}
                 <!-- FIX: Render as HTML to support Tiptap Rich Text formatting -->
                 <div
-                    class="slide-text text-white cq-pb-offset w-full text-center"
+                    class="slide-text text-white cq-pb-offset w-full text-center whitespace-pre-wrap"
                 >
                     {@html display.liveText}
                 </div>
@@ -211,7 +217,7 @@
 
             {#if display.liveReference}
                 <div
-                    class="absolute z-20 transition-opacity duration-300 {referencePositionClass}"
+                    class="absolute z-20 transition-opacity duration-300 -mb-2 {referencePositionClass}"
                 >
                     <p class="slide-reference text-white/90">
                         {display.liveReference}
@@ -294,9 +300,10 @@
         filter: var(--drop-shadow);
     }
     .slide-reference {
-        font-family: var(--font-family);
-        font-weight: var(--font-weight);
-        font-size: calc(3cqw * var(--font-scale));
+        font-family: var(--ref-font-family);
+        font-weight: var(--ref-font-weight);
+        text-transform: var(--ref-text-transform);
+        font-size: calc(3cqw * var(--ref-font-scale));
         -webkit-text-stroke: calc(var(--stroke-width) * 0.5) var(--stroke-color);
         paint-order: stroke fill;
         filter: var(--drop-shadow);

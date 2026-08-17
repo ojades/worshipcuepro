@@ -323,8 +323,11 @@
                 <div class="space-y-4 max-w-3xl">
                     {#each viewerSections as section}
                         {#each section.slides as slide}
+                            <!-- svelte-ignore a11y_no_static_element_interactions -->
                             <div
-                                class="group relative bg-card rounded-xl border border-border transition-all duration-200 p-5 hover:border-neon-violet/50 hover:bg-neon-violet/5 hover:shadow-lg hover:shadow-neon-violet/5"
+                                ondblclick={() =>
+                                    handlePlay(section.id, slide.id)}
+                                class="group relative bg-card rounded-xl border border-border transition-all duration-200 p-5 hover:border-neon-violet/50 hover:bg-neon-violet/5 hover:shadow-lg hover:shadow-neon-violet/5 select-none cursor-pointer"
                             >
                                 <div
                                     class="text-[10px] uppercase tracking-widest font-bold text-neon-cyan bg-neon-cyan/10 inline-block rounded-full px-2 py-0.5 mb-3"
@@ -337,9 +340,11 @@
                                     {slide.text}
                                 </div>
                                 <button
-                                    onclick={() =>
-                                        handlePlay(section.id, slide.id)}
-                                    class="absolute top-1/2 -translate-y-1/2 right-6 p-3 bg-neon-violet hover:bg-neon-violet-dark text-white rounded-full transition-all duration-200 opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 shadow-xl shadow-neon-violet/30 cursor-pointer"
+                                    onclick={(e) => {
+                                        e.stopPropagation();
+                                        handlePlay(section.id, slide.id);
+                                    }}
+                                    class="absolute top-1/2 -translate-y-1/2 right-6 p-3 bg-neon-violet hover:bg-neon-violet-dark text-white rounded-full transition-all duration-200 opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 shadow-xl shadow-neon-violet/30"
                                 >
                                     <Play
                                         size={18}

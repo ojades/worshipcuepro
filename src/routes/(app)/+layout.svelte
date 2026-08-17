@@ -27,7 +27,6 @@
 
     let { children } = $props();
 
-    let isDbReady = $state(false);
     let isAppReady = $state(false);
     let needsSetup = $state(false);
     let initStatus = $state("INITIALIZING ENGINE...");
@@ -42,10 +41,30 @@
         }
     }
 
+    async function forceBreakLock() {
+        await invoke("force_release_lock");
+        await invoke("check_and_acquire_lock"); // Re-acquire it for ourselves
+        settingsState.isReadOnly = false;
+        settingsState.lockOwner = "";
+    }
+
     async function loadAppResources() {
         try {
             await updateStatus("Loading Settings...");
-            await settingsState.init(); // <-- FIX: MUST wait for settings to load first
+            await settingsState.init();
+
+            await updateStatus("Verifying Workspace Lock...");
+            const lockOwner = await invoke<string>("check_and_acquire_lock");
+
+            if (lockOwner !== "") {
+                settingsState.isReadOnly = true;
+                settingsState.lockOwner = lockOwner;
+                console.warn(
+                    `[Sync] Booting in Read-Only mode. Locked by: ${lockOwner}`,
+                );
+            } else {
+                settingsState.isReadOnly = false;
+            }
 
             await updateStatus("Importing NKJV...");
             await bibleState.importXmlBible(NKJV, "NKJV");
@@ -124,11 +143,20 @@
         }
     });
 
-    async function handleWorkspaceSelected(newPath: string) {
+    // FIX: Updated to accept both paths and pass them to the Rust backend
+    async function handleWorkspaceSelected(
+        mediaPath: string,
+        dbPath: string | null,
+    ) {
         await updateStatus("Configuring Workspace...");
-        const savePath = await settingsState.parseWorkspaceDir(newPath);
 
-        await setCoreWorkspaceAPI(savePath);
+        // Ensure both directories get a neat "worshipcuepro" folder created inside them
+        const saveMediaPath = await settingsState.parseWorkspaceDir(mediaPath);
+        const saveDbPath = dbPath
+            ? await settingsState.parseWorkspaceDir(dbPath)
+            : null;
+
+        await setCoreWorkspaceAPI(saveMediaPath, saveDbPath);
 
         needsSetup = false;
 
@@ -148,7 +176,35 @@
 {#if needsSetup}
     <OnboardingSetup onComplete={handleWorkspaceSelected} />
 {:else if isAppReady}
-    {@render children()}
+    {#if settingsState.isReadOnly}
+        <div
+            class="absolute top-2 left-1/2 -translate-x-1/2 z-100 animate-in slide-in-from-top-4 fade-in duration-300"
+        >
+            <div
+                class="bg-amber-950/80 backdrop-blur-md border border-amber-500/50 text-amber-400 px-4 py-2 rounded-full flex items-center gap-4 shadow-[0_0_20px_rgba(245,158,11,0.2)]"
+            >
+                <div
+                    class="flex items-center gap-2 text-xs font-semibold tracking-wide uppercase"
+                >
+                    <span class="text-base">🔒</span>
+                    <span>Read Only Mode Active</span>
+                </div>
+
+                <div class="w-px h-4 bg-amber-500/30"></div>
+
+                <button
+                    onclick={forceBreakLock}
+                    class="text-[10px] bg-amber-500/10 hover:bg-amber-500 hover:text-black px-3 py-1 rounded-full font-bold transition-colors border border-amber-500/30"
+                    title="Only do this if the other operator's laptop crashed or went offline."
+                >
+                    Override
+                </button>
+            </div>
+        </div>
+    {/if}
+    <div class="flex-1 flex flex-col min-h-0 overflow-hidden relative">
+        {@render children()}
+    </div>
     <Alert />
     <GlobalShortcuts />
 {:else}
@@ -158,7 +214,7 @@
         <img
             src="/worshipcuepro-logo-sq.png"
             alt="WCP Logo"
-            class="w-20 h-20 mb-5 object-contain animate-[pulse_2s_infinite_ease-in-out]"
+            class="w-20 h-20 mb-5 object-contain animate-[pulse_2s_infinite_ease-in-out] scrollbar-none"
         />
         <div
             class="text-[#a1a1aa] text-sm font-medium tracking-[1px] uppercase"

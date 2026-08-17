@@ -17,7 +17,7 @@
 
         speakerTargetTimestamp?: number | null;
         speakerPausedRemainingMs?: number | null;
-        speakerTotalDurationMs?: number | null; // NEW: Needed to calculate percentages
+        speakerTotalDurationMs?: number | null;
         showSpeakerTimerOnStage?: boolean;
     };
 
@@ -38,6 +38,11 @@
             --font-scale: ${(display.stage?.textScale ?? 1) * (display.stage?.textFormat?.fontSizeScale ?? 1)};
             --drop-shadow: ${display.stage?.textFormat?.dropShadow ? "drop-shadow(0 4px 6px rgba(0,0,0,0.8))" : "none"};
             --v-gap: ${display.stage?.vGap ?? 0}cqh;
+
+            --ref-font-family: "${display.stage?.textFormat?.referenceFontFamily ?? display.stage?.textFormat?.fontFamily ?? "sans-serif"}", sans-serif;
+            --ref-font-weight: ${display.stage?.textFormat?.referenceFontWeight ?? "bold"};
+            --ref-text-transform: ${display.stage?.textFormat?.referenceTextTransform ?? "none"};
+            --ref-font-scale: ${(display.stage?.textScale ?? 1) * (display.stage?.textFormat?.referenceFontSizeScale ?? 1)};
         `);
 
     // Dynamic horizontal alignment mapping
@@ -71,8 +76,25 @@
     let currentTime = $state("");
     let serviceTimerText = $state<string | null>(null);
     let speakerTimerText = $state<string | null>(null);
-    let speakerTimerColorClass = $state("text-emerald-400"); // NEW: Tracks the current color state
+    let speakerTimerColorClass = $state("text-emerald-400");
     let isSpeakerOverrun = $state(false);
+    let bgVideoNode: HTMLVideoElement | null = $state(null);
+
+    // Sync Background Video Playback State
+    $effect(() => {
+        if (bgVideoNode && display.liveBackground) {
+            bgVideoNode.playbackRate =
+                display.liveBackground.playbackRate ?? 1.0;
+            if (display.liveBackground.isPlaying && bgVideoNode.paused) {
+                bgVideoNode.play().catch(() => {});
+            } else if (
+                !display.liveBackground.isPlaying &&
+                !bgVideoNode.paused
+            ) {
+                bgVideoNode.pause();
+            }
+        }
+    });
 
     function formatTime(ms: number) {
         const totalSeconds = Math.floor(Math.abs(ms) / 1000);
@@ -86,13 +108,12 @@
         return ms < 0 ? `-${formatted}` : formatted;
     }
 
-    // NEW: Helper to determine the color based on percentage
     function getSpeakerTimerColor(
         remainingMs: number,
         totalMs: number | null | undefined,
     ) {
-        if (remainingMs < 0) return "text-red-500 animate-pulse"; // Overrun
-        if (!totalMs || totalMs <= 0) return "text-emerald-400"; // Fallback if total isn't provided
+        if (remainingMs < 0) return "text-red-500 animate-pulse";
+        if (!totalMs || totalMs <= 0) return "text-emerald-400";
 
         const percentLeft = remainingMs / totalMs;
 
@@ -149,8 +170,8 @@
     }
 
     onMount(() => {
-        tick(); // Initial tick
-        clockInterval = setInterval(tick, 200); // 200ms for accurate timer ticking
+        tick();
+        clockInterval = setInterval(tick, 200);
     });
 
     onDestroy(() => clearInterval(clockInterval));
@@ -172,9 +193,31 @@
     class:opacity-0={display.isBlackout}
     style={styleString}
 >
-    <!-- Header / Info Bar -->
+    <!-- 0. Ambient Background Layer -->
+    {#if display.liveBackground}
+        <div class="absolute inset-0 z-0">
+            {#if display.liveBackground.type === "video"}
+                <!-- svelte-ignore a11y_media_has_caption -->
+                <video
+                    bind:this={bgVideoNode}
+                    src={display.liveBackground.url}
+                    class="w-full h-full object-cover opacity-50 blur-[40px] scale-110"
+                    loop
+                    muted
+                ></video>
+            {:else}
+                <img
+                    src={display.liveBackground.url}
+                    alt="Background"
+                    class="w-full h-full object-cover opacity-50 blur-[40px] scale-110"
+                />
+            {/if}
+        </div>
+    {/if}
+
+    <!-- Header / Info Bar (Frosted Glass) -->
     <header
-        class="cq-header border-b border-zinc-800 flex items-center justify-between cq-px bg-zinc-950 flex-shrink-0 z-20 font-sans"
+        class="cq-header border-b border-white/10 flex items-center justify-between cq-px bg-zinc-950/70 backdrop-blur-md flex-shrink-0 z-20 font-sans"
     >
         <div class="flex items-center justify-between cq-gap">
             <span
@@ -184,7 +227,7 @@
             </span>
             {#if display.liveReference}
                 <span
-                    class="stage-reference cq-label-next-right text-yellow-300 font-black drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-widest z-10"
+                    class="stage-reference cq-label-next-right text-gray-300 font-black drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] tracking-widest z-10"
                 >
                     {display.liveReference}
                 </span>
@@ -196,15 +239,15 @@
                 <div class="flex flex-col items-end drop-shadow-xl">
                     <span
                         class="text-[5cqh] font-black tabular-nums text-white leading-none"
-                        >{serviceTimerText}</span
                     >
+                        {serviceTimerText}
+                    </span>
                 </div>
             {/if}
 
-            <!-- Only show small timer in header if there is text or media blocking the center -->
             {#if display.showSpeakerTimerOnStage && speakerTimerText && (display.liveText || display.liveMedia)}
                 <div
-                    class="flex flex-col items-end drop-shadow-xl bg-black/40 px-[2cqw] py-[1cqh] rounded-xl backdrop-blur-md border border-white/10"
+                    class="flex flex-col items-end drop-shadow-xl bg-black/50 px-[2cqw] py-[1cqh] rounded-xl backdrop-blur-md border border-white/10"
                 >
                     <span
                         class="text-[8cqh] font-black tabular-nums leading-none transition-colors duration-500 {speakerTimerColorClass}"
@@ -213,7 +256,6 @@
                     </span>
                 </div>
             {:else}
-                <!-- Show clock if there is no timer in the header -->
                 <div class="flex items-center gap-8 md:gap-16">
                     {#if display.stageShowClock !== false}
                         <div
@@ -234,52 +276,51 @@
         >
             <span
                 class="text-[6cqh] font-black uppercase tracking-widest text-center animate-pulse"
-                >{display.stageMessage}</span
             >
+                {display.stageMessage}
+            </span>
         </div>
     {/if}
 
     <!-- Display Area -->
     <div class="flex-1 flex flex-col min-h-0 relative z-10">
-        <!-- CURRENT SLIDE -->
+        <!-- CURRENT SLIDE (Frosted Glass) -->
         <div
-            class="transition-all duration-300 border-b border-zinc-800 cq-p flex flex-col relative bg-black {display.stageShowNext ===
+            class="transition-all duration-300 border-b border-white/10 cq-p flex flex-col relative bg-black/30 {display.stageShowNext ===
             false
                 ? 'flex-1'
                 : 'flex-[5]'}"
         >
             <div
-                class="live-text-container flex-1 w-full h-full flex {horizontalAlignmentClass} {verticalAlignmentClass} px-4 md:px-12 relative"
+                class="live-text-container flex-1 w-full h-full flex {horizontalAlignmentClass} {verticalAlignmentClass} px-4 md:px-12 relative z-10"
             >
-                <!-- Foreground Media on Stage -->
                 {#if display.liveMedia}
                     {#if display.liveMedia.type === "video"}
                         <video
                             src={display.liveMedia.url}
                             autoplay
                             muted
-                            class="absolute inset-0 w-full h-full object-contain opacity-40"
+                            class="absolute inset-0 w-full h-full object-contain opacity-60 drop-shadow-2xl"
                         ></video>
                     {:else}
                         <img
                             src={display.liveMedia.url}
                             alt="Media"
-                            class="absolute inset-0 w-full h-full object-contain opacity-40"
+                            class="absolute inset-0 w-full h-full object-contain opacity-60 drop-shadow-2xl"
                         />
                     {/if}
                     <div
-                        class="absolute inset-0 flex flex-col items-center justify-center z-10 font-sans"
+                        class="absolute inset-0 flex flex-col items-center justify-center z-20 font-sans"
                     >
                         <span
-                            class="bg-black/80 text-neon-cyan px-6 py-3 rounded-xl border border-neon-cyan/30 font-black uppercase tracking-[0.2em] cq-text-media-badge shadow-2xl"
+                            class="bg-black/80 text-neon-cyan px-6 py-3 rounded-xl border border-neon-cyan/30 font-black uppercase tracking-[0.2em] cq-text-media-badge shadow-2xl backdrop-blur-md"
                         >
                             Now Showing Media
                         </span>
                     </div>
                 {:else if display.liveText}
-                    <!-- FIX: Rendering raw HTML for Tiptap formatted text, changed to <div> -->
                     <div
-                        class="stage-slide-text text-white transition-all whitespace-pre-wrap duration-300 w-full relative z-10 {getLiveTextScaleClass(
+                        class="stage-slide-text text-gray-100 transition-all whitespace-pre-wrap duration-300 w-full relative z-10 {getLiveTextScaleClass(
                             display.liveText,
                         )}"
                     >
@@ -288,13 +329,12 @@
                         {/if}
                     </div>
                 {:else}
-                    <!-- MASSIVE CENTERED TIMER FOR EMPTY STAGE -->
                     {#if display.showSpeakerTimerOnStage && speakerTimerText}
                         <div
                             class="absolute inset-0 flex flex-col items-center justify-center z-10 animate-in zoom-in-95 duration-300 font-sans"
                         >
                             <span
-                                class="text-zinc-500 text-[8cqh] font-bold uppercase tracking-widest mb-[2cqh]"
+                                class="text-zinc-400 text-[8cqh] font-bold uppercase tracking-widest mb-[2cqh]"
                                 >Time Left</span
                             >
                             <span
@@ -303,26 +343,20 @@
                                 {speakerTimerText}
                             </span>
                         </div>
-                    {:else}
-                        <span
-                            class="text-zinc-800 font-mono tracking-widest cq-text-empty font-bold uppercase relative z-10"
-                        >
-                        </span>
                     {/if}
                 {/if}
             </div>
         </div>
 
-        <!-- NEXT SLIDE -->
+        <!-- NEXT SLIDE (Frosted Glass) -->
         {#if display.stageShowNext !== false}
             <div
-                class="flex-[2] cq-p flex flex-col relative bg-zinc-900/50 animate-in slide-in-from-bottom-4 z-20"
+                class="flex-[2] cq-p flex flex-col relative bg-zinc-950/80 backdrop-blur-xl animate-in slide-in-from-bottom-4 z-20"
             >
                 <div
                     class="next-text-container flex-1 w-full flex {horizontalAlignmentClass} justify-center px-8"
                 >
                     {#if display.nextText}
-                        <!-- FIX: Rendering raw HTML for Tiptap formatted text, changed to <div> -->
                         <div
                             class="stage-next-text cq-text-next text-zinc-400 line-clamp-3 w-full whitespace-pre-wrap"
                         >
@@ -330,12 +364,6 @@
                                 {@html display.nextText}
                             {/if}
                         </div>
-                    {:else}
-                        <span
-                            class="text-zinc-800/50 font-mono tracking-widest cq-text-empty font-bold uppercase"
-                        >
-                            [ End of Section ]
-                        </span>
                     {/if}
                 </div>
             </div>
@@ -369,13 +397,14 @@
         letter-spacing: var(--letter-spacing);
     }
 
-    /* FIX: Force embedded HTML from Tiptap to inherit all stage styles perfectly */
     :global(.stage-slide-text *),
     :global(.stage-next-text *) {
         font-family: inherit;
+        font-size: inherit;
         text-transform: inherit;
         font-weight: inherit;
         letter-spacing: inherit;
+        line-height: inherit;
         text-align: inherit;
         -webkit-text-stroke: inherit;
         paint-order: inherit;
@@ -401,11 +430,13 @@
     }
 
     .stage-reference {
-        font-family: var(--font-family);
+        font-family: var(--ref-font-family);
+        font-weight: var(--ref-font-weight);
+        text-transform: var(--ref-text-transform);
     }
 
     .cq-header {
-        height: 14cqh;
+        height: 10cqh;
     }
     .cq-px {
         padding-left: 4cqw;

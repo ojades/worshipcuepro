@@ -1,26 +1,42 @@
-<!-- src/lib/components/OnboardingSetup.svelte -->
+<!-- src/lib/components/layout/OnboardingSetup.svelte -->
 <script lang="ts">
     import { open } from "@tauri-apps/plugin-dialog";
 
-    let { onComplete } = $props<{ onComplete: (path: string) => void }>();
+    let { onComplete } = $props<{
+        onComplete: (mediaPath: string, dbPath: string | null) => void;
+    }>();
+
     let isSelecting = $state(false);
+    let isHybridMode = $state(false);
 
-    async function selectFolder() {
-        if (isSelecting) return;
+    let selectedMediaPath = $state<string | null>(null);
+    let selectedDbPath = $state<string | null>(null);
 
+    async function pickFolder(title: string): Promise<string | null> {
+        const path = await open({
+            directory: true,
+            multiple: false,
+            title: title,
+        });
+        return path && typeof path === "string" ? path : null;
+    }
+
+    async function handleSelectMedia() {
+        selectedMediaPath = await pickFolder("Select Media/Fonts Workspace");
+    }
+
+    async function handleSelectDb() {
+        selectedDbPath = await pickFolder("Select Database Location");
+    }
+
+    async function finalize() {
+        if (!selectedMediaPath) return;
         isSelecting = true;
-        try {
-            const selectedPath = await open({
-                directory: true,
-                multiple: false,
-                title: "Select WorshipCuePro Workspace Folder",
-            });
 
-            if (selectedPath && typeof selectedPath === "string") {
-                onComplete(selectedPath);
-            }
+        try {
+            // Pass the split paths up to layout
+            onComplete(selectedMediaPath, isHybridMode ? selectedDbPath : null);
         } finally {
-            // Reset state if they cancel the dialog
             isSelecting = false;
         }
     }
@@ -58,60 +74,96 @@
             </svg>
         </div>
 
-        <!-- Typography -->
         <h1 class="text-2xl font-semibold text-gray-100 tracking-tight mb-3">
             Welcome to WorshipCuePro
         </h1>
-        <p class="text-sm text-gray-400 leading-relaxed mb-8">
-            To get started, please choose a workspace folder. This is where your
-            database and assets will be saved. A <span
-                class="text-indigo-400 font-semibold">worshipcuepro</span
-            > folder will be created in your selected folder.
+        <p class="text-sm text-gray-400 leading-relaxed mb-6">
+            Choose where your assets and database will be saved.
         </p>
 
-        <!-- Neon-Styled Button -->
-        <button
-            onclick={selectFolder}
-            disabled={isSelecting}
-            class="w-full group relative flex items-center justify-center gap-2 py-3 px-5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-400 text-white rounded-xl font-medium transition-all duration-300 shadow-[0_0_15px_rgba(79,70,229,0.3)] hover:shadow-[0_0_25px_rgba(79,70,229,0.5)] ring-1 ring-indigo-500/50 disabled:ring-0 disabled:shadow-none focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-[#121212]"
+        <!-- Toggle Hybrid Mode -->
+        <label
+            class="flex items-center gap-3 mb-6 cursor-pointer justify-center p-3 w-full bg-gray-900/50 rounded-xl border border-gray-800 transition-colors hover:bg-gray-800/50"
         >
-            {#if isSelecting}
-                <svg
-                    class="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
+            <input
+                type="checkbox"
+                bind:checked={isHybridMode}
+                class="accent-indigo-500 w-4 h-4 rounded border-gray-700 bg-gray-800"
+            />
+            <div class="flex flex-col text-left">
+                <span class="text-sm font-semibold text-gray-200"
+                    >Hybrid Sync</span
                 >
-                    <circle
-                        class="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        stroke-width="4"
-                    ></circle>
-                    <path
-                        class="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                </svg>
-                Opening...
-            {:else}
-                Select Workspace
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    class="h-4 w-4 transition-transform group-hover:translate-x-1"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
+                <span class="text-[10px] text-gray-500"
+                    >Split Database & Media locations</span
                 >
-                    <path
-                        fill-rule="evenodd"
-                        d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z"
-                        clip-rule="evenodd"
-                    />
-                </svg>
+            </div>
+        </label>
+
+        <!-- Media Folder Picker -->
+        <div class="space-y-2 w-full mb-4 text-left">
+            <label
+                for="media-folder-label"
+                class="text-xs font-bold text-gray-500 uppercase tracking-wider"
+                >Media & Fonts Workspace</label
+            >
+            <button
+                id="media-folder-label"
+                onclick={handleSelectMedia}
+                class="w-full p-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors flex justify-between items-center text-left shadow-inner"
+            >
+                <span class="truncate pr-4"
+                    >{selectedMediaPath || "Select Folder..."}</span
+                >
+                <span
+                    class="shrink-0 text-indigo-400 font-bold tracking-wide text-xs uppercase"
+                    >Browse</span
+                >
+            </button>
+            {#if isHybridMode}
+                <p class="text-[10px] text-gray-500 mt-1">
+                    Recommended: Local Sync Folder (Resilio/Syncthing)
+                </p>
             {/if}
+        </div>
+
+        <!-- Database Folder Picker -->
+        {#if isHybridMode}
+            <div
+                class="space-y-2 w-full mb-6 text-left animate-in slide-in-from-top-4 fade-in duration-300"
+            >
+                <label
+                    for="db-folder-label"
+                    class="text-xs font-bold text-gray-500 uppercase tracking-wider"
+                    >Database Location</label
+                >
+                <button
+                    id="db-folder-label"
+                    onclick={handleSelectDb}
+                    class="w-full p-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors flex justify-between items-center text-left shadow-inner"
+                >
+                    <span class="truncate pr-4"
+                        >{selectedDbPath || "Select Folder..."}</span
+                    >
+                    <span
+                        class="shrink-0 text-indigo-400 font-bold tracking-wide text-xs uppercase"
+                        >Browse</span
+                    >
+                </button>
+                <p class="text-[10px] text-gray-500 mt-1">
+                    Recommended: Cloud Sync Folder (Dropbox/OneDrive)
+                </p>
+            </div>
+        {/if}
+
+        <button
+            onclick={finalize}
+            disabled={isSelecting ||
+                !selectedMediaPath ||
+                (isHybridMode && !selectedDbPath)}
+            class="w-full py-3 px-5 mt-4 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-500 text-white rounded-xl font-semibold transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] disabled:shadow-none focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-[#121212]"
+        >
+            {isSelecting ? "Configuring..." : "Complete Setup"}
         </button>
     </div>
 </div>

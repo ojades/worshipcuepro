@@ -3,6 +3,7 @@ import { browser } from "$app/environment";
 import type { AppSettings, TextFormatConfig } from "$lib/types/models";
 import { mkdir } from "@tauri-apps/plugin-fs";
 import { getDbSettingAPI, setDbSettingAPI } from "$lib/commands/settings-db";
+import { systemState } from "$lib/state/system.svelte"; // <-- NEW IMPORT
 
 const DEFAULT_FORMAT: TextFormatConfig = {
   fontFamily: "sans-serif",
@@ -15,6 +16,10 @@ const DEFAULT_FORMAT: TextFormatConfig = {
   textStrokeWidth: 2,
   textStrokeColor: "#000000",
   dropShadow: true,
+  referenceFontFamily: "sans-serif",
+  referenceFontSizeScale: 1.0,
+  referenceFontWeight: "bold",
+  referenceTextTransform: "uppercase",
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -43,6 +48,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       ...DEFAULT_FORMAT,
       textTransform: "none",
       textStrokeWidth: 0,
+      referenceTextTransform: "none",
     },
   },
   obsTemplates: {
@@ -54,6 +60,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 class SettingsState {
   config = $state<AppSettings>({ ...DEFAULT_SETTINGS });
   workspacePath = $state<string>("");
+  isReadOnly = $state(false);
+  lockOwner = $state("");
 
   async init() {
     if (!browser) return;
@@ -85,6 +93,9 @@ class SettingsState {
 
   private async saveSettings() {
     if (!browser) return;
+    // SILENT GUARD: Prevent background saves if read-only
+    if (this.isReadOnly) return;
+
     try {
       await this.setDbSetting("app_config", JSON.stringify(this.config));
     } catch (e) {
@@ -93,12 +104,30 @@ class SettingsState {
   }
 
   update(updates: Partial<AppSettings>) {
+    // HARD GUARD: Prevent formatting/setting changes if locked
+    if (this.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot change settings: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     this.config = { ...this.config, ...updates };
     this.saveSettings().catch(console.error);
   }
 
   async clearLocalCache() {
     if (!browser) return;
+
+    // HARD GUARD
+    if (this.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot reset settings: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
 
     this.config = { ...DEFAULT_SETTINGS };
     localStorage.clear();
@@ -110,6 +139,15 @@ class SettingsState {
   }
 
   importSettings(jsonString: string): boolean {
+    // HARD GUARD
+    if (this.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot import settings: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return false;
+    }
+
     try {
       const parsed = JSON.parse(jsonString);
 
@@ -152,6 +190,9 @@ class SettingsState {
   }
 
   async setDbSetting(key: string, value: string): Promise<boolean> {
+    // SILENT GUARD
+    if (this.isReadOnly) return false;
+
     try {
       await setDbSettingAPI(key, value);
       return true;

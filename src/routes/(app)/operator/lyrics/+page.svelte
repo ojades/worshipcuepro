@@ -15,7 +15,6 @@
     let forceEditMode = $state(false);
     let showImportModal = $state(false);
 
-    // Map DB models to the Library UI
     let songList = $derived(
         songsState.songs.map((s: Song) => ({
             id: s.id,
@@ -24,7 +23,6 @@
         })),
     );
 
-    // Derive the selected song, and parse raw_lyrics into presentation sections on the fly
     let selectedSong = $derived.by(() => {
         const raw = songsState.songs.find((s) => s.id === selectedSongId);
         if (!raw) return null;
@@ -54,6 +52,15 @@
             forceEditMode = true;
         }
     }
+
+    // NEW: Handle inline deletion from the library list
+    async function handleDeleteSong(id: string) {
+        const success = await songsState.delete(id);
+        if (success && selectedSongId === id) {
+            selectedSongId = null;
+            forceEditMode = false;
+        }
+    }
 </script>
 
 <svelte:head>
@@ -74,12 +81,12 @@
             }}
             onAddSong={handleAddSong}
             onOpenImport={() => (showImportModal = true)}
+            onDeleteSong={handleDeleteSong}
         />
     </div>
 
     <!-- Right Pane -->
     <div class="flex-1 h-full min-w-0">
-        <!-- forceEditMode triggers the editor open automatically on new song -->
         <LyricsView
             song={selectedSong}
             {forceEditMode}
@@ -90,6 +97,7 @@
         />
     </div>
 </div>
+
 {#if showImportModal}
     <SongImport
         onClose={(importedId) => {

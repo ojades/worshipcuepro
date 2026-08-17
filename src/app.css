@@ -127,3 +127,27 @@
         @apply bg-background text-foreground font-sans antialiased;
     }
 }
+
+/* 1. Ultra-thin width */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 3px;
+    height: 3px; /* For horizontal scrolls */
+}
+
+/* 2. Completely Invisible Track */
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* 3. Faint, elegant default state (Fixes the WebKit flicker bug!) */
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    /* Barely-there violet using RGBA (matches #8b5cf6 but 20% opacity) */
+    background-color: rgba(139, 92, 246, 0.2);
+    border-radius: 9999px;
+}
+
+/* 4. Brighten strictly when the user hovers/clicks the scrollbar itself */
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.custom-scrollbar::-webkit-scrollbar-thumb:active {
+    background-color: rgba(139, 92, 246, 0.9);
+}

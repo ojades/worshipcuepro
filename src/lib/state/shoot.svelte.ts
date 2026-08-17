@@ -2,6 +2,8 @@
 import type { Cue } from "$lib/types/models";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { media } from "$lib/state/media.svelte";
+import { systemState } from "$lib/state/system.svelte";
+import { settingsState } from "$lib/state/settings.svelte";
 import {
   fetchAllShootsAPI,
   fetchShootSlidesAPI,
@@ -56,6 +58,14 @@ export class ShootState {
   }
 
   async saveShoot(id: string | null, title: string, slides: any[]) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot save: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     const shootId = id || crypto.randomUUID();
     try {
       // Pass text_content up to Rust
@@ -68,15 +78,32 @@ export class ShootState {
       return shootId;
     } catch (error) {
       console.error("Failed to save shoot:", error);
+      systemState.addAlert({ message: "Failed to save shoot.", type: "error" });
     }
   }
 
   async deleteShoot(id: string) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot delete: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     try {
       await deleteShootAPI(id);
       await this.loadAll();
+      systemState.addAlert({
+        message: "Shoot deleted successfully.",
+        type: "success",
+      });
     } catch (error) {
       console.error("Failed to delete shoot:", error);
+      systemState.addAlert({
+        message: "Failed to delete shoot.",
+        type: "error",
+      });
     }
   }
 

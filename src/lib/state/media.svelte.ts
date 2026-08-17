@@ -1,8 +1,9 @@
-// /src/lib/state/media.svelte.ts
+// src/lib/state/media.svelte.ts
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { mkdir, exists, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { join } from "@tauri-apps/api/path";
+import { systemState } from "$lib/state/system.svelte"; // <-- NEW IMPORT
 import { settingsState } from "$lib/state/settings.svelte";
 import {
   fetchAllMediaAPI,
@@ -79,6 +80,14 @@ class MediaState {
   }
 
   async addCategory(name: string) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot add category: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     const trimmed = name.trim();
     if (trimmed && !this.savedCategories.includes(trimmed)) {
       this.savedCategories.push(trimmed);
@@ -87,6 +96,14 @@ class MediaState {
   }
 
   async renameCategory(oldName: string, newName: string) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot rename category: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     const trimmed = newName.trim();
     if (!trimmed || oldName === "Uncategorized" || oldName === trimmed) return;
 
@@ -106,6 +123,14 @@ class MediaState {
     name: string,
     fallbackCategory: string = "Uncategorized",
   ) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot delete category: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     if (name === "Uncategorized") return;
 
     this.savedCategories = this.savedCategories.filter((c) => c !== name);
@@ -157,7 +182,12 @@ class MediaState {
     );
 
     this.allMedia = processedMedia;
-    this.processMissingThumbnails();
+
+    // We only want to generate thumbnails locally if we aren't in Read-Only mode
+    // (So we don't accidentally write to the DB)
+    if (!settingsState.isReadOnly) {
+      this.processMissingThumbnails();
+    }
   }
 
   private async processMissingThumbnails() {
@@ -252,18 +282,24 @@ class MediaState {
     url: string,
     targetCategory: string = "Uncategorized",
   ) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot download: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return false;
+    }
+
     this.isDownloadingYoutube = true;
     try {
       const workspace = settingsState.workspacePath;
       if (!workspace) throw new Error("Workspace path is not configured.");
 
-      // 1. Call Rust to download the file directly to the workspace
       const filename = await invoke<string>("download_youtube_video", {
         url: url,
         workspacePath: workspace,
       });
 
-      // 2. Insert the downloaded file using the Rust SQLite backend
       const id = crypto.randomUUID();
       const name = filename.replace(/\.[^/.]+$/, "");
 
@@ -279,12 +315,18 @@ class MediaState {
         ],
       });
 
-      // 3. Reload media to show the new video instantly
       await this.loadAll();
+      systemState.addAlert({
+        message: "YouTube video downloaded successfully.",
+        type: "success",
+      });
       return true;
     } catch (err) {
       console.error("YouTube download failed:", err);
-      alert(err);
+      systemState.addAlert({
+        message: "YouTube download failed.",
+        type: "error",
+      });
       return false;
     } finally {
       this.isDownloadingYoutube = false;
@@ -292,6 +334,14 @@ class MediaState {
   }
 
   async importMedia(targetCategory: string = "Uncategorized") {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot import media: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     const selected = await open({
       multiple: true,
       filters: [
@@ -377,15 +427,35 @@ class MediaState {
 
     await this.loadAll();
     this.isImporting = false;
+    systemState.addAlert({
+      message: "Media imported successfully.",
+      type: "success",
+    });
   }
 
   async updateCategories(ids: string[], newCategory: string) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot change category: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     if (ids.length === 0) return;
     await bulkUpdateMediaCategoryAPI(ids, newCategory);
     await this.loadAll();
   }
 
   async bulkDelete(ids: string[]) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot delete media: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     if (ids.length === 0) return;
 
     // 1. Fetch paths first so we know what to delete from disk
@@ -424,6 +494,10 @@ class MediaState {
       this.activeMedia = null;
     }
     await this.loadAll();
+    systemState.addAlert({
+      message: "Media deleted successfully.",
+      type: "success",
+    });
   }
 
   async delete(id: string) {

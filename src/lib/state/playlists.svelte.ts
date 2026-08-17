@@ -2,8 +2,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { presentation } from "./presentation.svelte";
 import { shootState } from "./shoot.svelte";
-import { media } from "./media.svelte"; // <-- Ensure media state is imported
+import { media } from "./media.svelte";
 import { parseLyrics } from "$lib/utils/lyrics";
+import { systemState } from "$lib/state/system.svelte"; // <-- NEW IMPORT
+import { settingsState } from "$lib/state/settings.svelte"; // <-- NEW IMPORT
 import {
   fetchAllPlaylistsAPI,
   createPlaylistAPI,
@@ -29,16 +31,36 @@ export class PlaylistsState {
   }
 
   async create(title: string) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot create playlist: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     const id = crypto.randomUUID();
     try {
       await createPlaylistAPI(id, title);
       await this.loadAll();
     } catch (error) {
       console.error("Failed to create playlist:", error);
+      systemState.addAlert({
+        message: "Failed to create playlist.",
+        type: "error",
+      });
     }
   }
 
   async update(id: string, newTitle: string) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot rename playlist: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     try {
       await updatePlaylistAPI(id, newTitle);
       await this.loadAll();
@@ -48,10 +70,22 @@ export class PlaylistsState {
       }
     } catch (error) {
       console.error("Failed to update playlist:", error);
+      systemState.addAlert({
+        message: "Failed to update playlist.",
+        type: "error",
+      });
     }
   }
 
   async delete(id: string) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot delete playlist: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     try {
       await deletePlaylistAPI(id);
       await this.loadAll();
@@ -61,6 +95,10 @@ export class PlaylistsState {
       }
     } catch (error) {
       console.error("Failed to delete playlist:", error);
+      systemState.addAlert({
+        message: "Failed to delete playlist.",
+        type: "error",
+      });
     }
   }
 
@@ -74,7 +112,6 @@ export class PlaylistsState {
       const cues = await Promise.all(
         rawCues.map(async (cue: any) => {
           if (cue.type === "media") {
-            // Find the item in local media state for a guaranteed valid asset_url
             const m = media.allMedia.find((x) => x.id === cue.id);
             const resolvedPath = cue.filepath || cue.url || m?.filepath || "";
 
@@ -111,6 +148,15 @@ export class PlaylistsState {
       return presentation.activePlaylist.id;
     }
 
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message:
+          "Cannot auto-create Live Session: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      throw new Error("Read-Only Mode Active");
+    }
+
     const id = crypto.randomUUID();
     const title = `Live Session - ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 
@@ -129,6 +175,14 @@ export class PlaylistsState {
     cueId: string,
     cueType: "song" | "media" | "shoot" = "song",
   ) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot add to playlist: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     const playlistId = await this.ensureActivePlaylist();
     await this.addCueToPlaylist(playlistId, cueId, cueType);
   }
@@ -138,6 +192,14 @@ export class PlaylistsState {
     cueId: string,
     cueType: "song" | "media" | "shoot" = "song",
   ) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot add to playlist: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     const playlistItemId = crypto.randomUUID();
     try {
       await addCueToPlaylistAPI(playlistId, cueId, cueType, playlistItemId);
@@ -177,10 +239,25 @@ export class PlaylistsState {
       await this.loadAll();
     } catch (error) {
       console.error("Failed to add cue to playlist:", error);
+      systemState.addAlert({
+        message: "Failed to add to playlist.",
+        type: "error",
+      });
     }
   }
 
   async updateSortOrder(newCuesArray: any[]) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot reorder playlist: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      // Revert the local UI state back to the original order from the DB
+      if (presentation.activePlaylist)
+        await this.loadPlaylist(presentation.activePlaylist.id);
+      return;
+    }
+
     if (!presentation.activePlaylist) return;
 
     presentation.activePlaylist.cues = newCuesArray;
@@ -199,6 +276,14 @@ export class PlaylistsState {
   }
 
   async removeCueFromPlaylist(playlistItemId: string, playlistId: string) {
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot remove cue: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     try {
       await removeCueFromPlaylistAPI(playlistItemId);
 
@@ -209,6 +294,10 @@ export class PlaylistsState {
       await this.loadAll();
     } catch (error) {
       console.error("Failed to remove cue from playlist:", error);
+      systemState.addAlert({
+        message: "Failed to remove from playlist.",
+        type: "error",
+      });
     }
   }
 }

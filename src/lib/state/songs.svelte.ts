@@ -1,5 +1,6 @@
-// /src/lib/state/songs.svelte.ts
+// src/lib/state/songs.svelte.ts
 import { systemState } from "$lib/state/system.svelte";
+import { settingsState } from "$lib/state/settings.svelte"; // <-- NEW IMPORT
 import type { SongCue } from "$lib/types/models";
 import {
   fetchAllSongs,
@@ -45,6 +46,15 @@ class SongsState {
     artist: string;
     raw_lyrics: string;
   }) {
+    // HARD GUARD: Prevent DB mutation if locked
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot import: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return null;
+    }
+
     try {
       const id = crypto.randomUUID();
 
@@ -73,6 +83,15 @@ class SongsState {
   }
 
   async create() {
+    // HARD GUARD: Prevent DB mutation if locked
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot create: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return null;
+    }
+
     try {
       const id = crypto.randomUUID();
 
@@ -97,6 +116,15 @@ class SongsState {
   }
 
   async update(id: string, data: any) {
+    // HARD GUARD: Prevent DB mutation if locked
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot save: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     try {
       await updateSongAPI({
         id,
@@ -117,6 +145,15 @@ class SongsState {
   }
 
   async delete(id: string) {
+    // HARD GUARD: Prevent DB mutation if locked
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot delete: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return false;
+    }
+
     try {
       await deleteSongAPI(id);
       await this.load();

@@ -1,6 +1,8 @@
-// /src/lib/state/bible.svelte.ts
+// src/lib/state/bible.svelte.ts
 import { bibleClient } from "$lib/api/bible-client";
 import { youversionClient } from "$lib/api/youversion-client";
+import { systemState } from "$lib/state/system.svelte"; // <-- NEW IMPORT
+import { settingsState } from "$lib/state/settings.svelte"; // <-- NEW IMPORT
 import {
   clearBibleCacheAPI,
   deleteBibleCacheAPI,
@@ -15,7 +17,6 @@ import {
 import { LOADING_SLIDE_TEXT } from "$lib/types/models";
 import { chunkProse } from "$lib/utils/helper";
 import { presentation } from "./presentation.svelte";
-import { settingsState } from "./settings.svelte";
 
 const CACHE_TTL_MS = 20 * 24 * 60 * 60 * 1000; // 20 Days
 
@@ -241,18 +242,22 @@ class BibleState {
   // ----------------------------------------
   // SYSTEM BIBLE IMPORTER
   // ----------------------------------------
-  /**
-   * Feed this function the raw JSON array. It will organize it into the cache DB
-   * AND insert into the FTS engine for instant searching.
-   */
   async importSystemBible(jsonData: any[]) {
+    // HARD GUARD: Prevent DB mutation if locked
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot import Bible: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     if (!jsonData || jsonData.length === 0) return;
 
     const versionAbbr = jsonData[0].version;
     const prefixedId = `sys_${versionAbbr}`;
     const importFlagKey = `imported_${prefixedId}`;
 
-    // Skip if we already imported this version
     const alreadyImported = await this.cacheDB.get(importFlagKey);
     if (alreadyImported) {
       console.log(`[System Bible] ${versionAbbr} already imported. Skipping.`);
@@ -263,7 +268,6 @@ class BibleState {
       `[System Bible] Importing ${versionAbbr}... This may take a moment.`,
     );
 
-    // 1. Register the version in our system list
     let systemVersions =
       (await this.cacheDB.get<UnifiedBible[]>("system_bible_versions")) || [];
     if (!systemVersions.some((v) => v.id === prefixedId)) {
@@ -282,7 +286,6 @@ class BibleState {
       );
     }
 
-    // 2. Group the flat JSON into Books -> Chapters -> Verses and prep FTS
     const booksMap = new Map<number, any>();
     const ftsVerses: FtsVerseInsert[] = [];
 
@@ -313,13 +316,11 @@ class BibleState {
         text: row.text,
       });
 
-      // Prepare FTS payload
       if (row.text) {
         ftsVerses.push({ reference, text: row.text });
       }
     }
 
-    // 3. Write structured data to cache DB concurrently for MASSIVE speed boost
     const unifiedBooks: UnifiedBook[] = [];
     const dbPromises: Promise<void>[] = [];
 
@@ -364,7 +365,6 @@ class BibleState {
 
     await Promise.all(dbPromises);
 
-    // 4. Fire the blazing-fast Rust FTS Bulk Insert transaction
     try {
       console.log(
         `[System Bible] Indexing ${ftsVerses.length} verses for search...`,
@@ -377,10 +377,16 @@ class BibleState {
     console.log(`[System Bible] ${versionAbbr} import complete!`);
   }
 
-  /**
-   * Parses an XML Bible file and feeds it into the system database importer.
-   */
   async importXmlBible(xmlString: string, customAbbreviation?: string) {
+    // HARD GUARD: Prevent DB mutation if locked
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot import XML Bible: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     console.log("[System Bible] Parsing XML...");
 
     let sanitizedXml = xmlString.replace(/^\uFEFF/, "").trim();
@@ -492,17 +498,22 @@ class BibleState {
   async deleteSystemBible(prefixedId: string) {
     if (!prefixedId.startsWith("sys_")) return;
 
+    // HARD GUARD: Prevent DB mutation if locked
+    if (settingsState.isReadOnly) {
+      systemState.addAlert({
+        message: "Cannot delete Bible: Database is in Read-Only mode.",
+        type: "warning",
+      });
+      return;
+    }
+
     console.log(`[System Bible] Deleting translation ${prefixedId}...`);
     this.isLoading = true;
 
     try {
-      // 1. Delete all cached JSON data
       await deleteSystemBibleCacheAPI(prefixedId);
-
-      // 2. Delete the FTS5 Native Index
       await deleteBibleFtsVersionAPI(prefixedId);
 
-      // 3. Remove it from the registered system versions array
       const systemVersions =
         (await this.cacheDB.get<UnifiedBible[]>("system_bible_versions")) || [];
       const updatedSystemVersions = systemVersions.filter(
@@ -514,11 +525,8 @@ class BibleState {
         updatedSystemVersions,
         10 * 365 * 24 * 60 * 60 * 1000,
       );
-
-      // 4. Clear the unified memory and DB cache so the UI updates
       await this.cacheDB.delete("unified_bible_versions");
 
-      // 5. Deselect if it's currently active
       if (this.selectedVersion === prefixedId) {
         this.selectedVersion = null;
         this.selectedBook = null;
@@ -526,7 +534,6 @@ class BibleState {
         this.verses = [];
       }
 
-      // 6. Force a full reload to reflect the deleted state
       await this.refreshVersions();
       console.log(`[System Bible] ${prefixedId} successfully deleted.`);
     } catch (err) {
@@ -544,7 +551,6 @@ class BibleState {
 
     this.isLoading = true;
     try {
-      // Queries directly against the extremely fast SQLite FTS5 virtual table via Rust IPC
       return await searchBibleFtsAPI(this.selectedVersion, query, limit);
     } catch (err) {
       console.error("Bible search failed:", err);
@@ -603,7 +609,6 @@ class BibleState {
         }
       };
 
-      // Fetch System Bibles from cache instantly, wrap external APIs with a fast timeout
       const [sysVersions, abVersions, yvVersions] = await Promise.allSettled([
         this.cacheDB.get<UnifiedBible[]>("system_bible_versions"),
         fetchWithTimeout(bibleClient.getVersions()),
@@ -612,14 +617,10 @@ class BibleState {
 
       let unifiedList: UnifiedBible[] = [];
 
-      // 1. Load System (Local) Bibles first (Guaranteed to work offline)
       if (sysVersions.status === "fulfilled" && sysVersions.value) {
         unifiedList.push(...sysVersions.value);
-      } else {
-        console.log("No local system Bibles found in cache.");
       }
 
-      // 2. Safely add API.Bible if online
       if (abVersions.status === "fulfilled") {
         unifiedList.push(
           ...abVersions.value.map((v: any) => ({
@@ -631,14 +632,8 @@ class BibleState {
             language: v.language.id,
           })),
         );
-      } else {
-        console.warn(
-          "ApiBible offline or failed:",
-          abVersions.reason?.message || abVersions.reason,
-        );
       }
 
-      // 3. Safely add YouVersion if online
       if (yvVersions.status === "fulfilled") {
         unifiedList.push(
           ...yvVersions.value.map((v: any) => ({
@@ -650,14 +645,8 @@ class BibleState {
             language: v.language_tag,
           })),
         );
-      } else {
-        console.warn(
-          "YouVersion offline or failed:",
-          yvVersions.reason?.message || yvVersions.reason,
-        );
       }
 
-      // Ensure we have at least something to show
       if (unifiedList.length === 0) {
         throw new Error(
           "No Bibles available online or offline. Please import a system Bible.",
@@ -718,7 +707,6 @@ class BibleState {
 
       let mappedBooks: UnifiedBook[] = [];
 
-      // ADAPTER ROUTING
       if (provider === "api.bible") {
         const rawBooks = await bibleClient.getBooks(originalId);
         mappedBooks = rawBooks.map((b) => ({ id: b.id, name: b.name }));
@@ -791,7 +779,6 @@ class BibleState {
 
       let mappedChapters: UnifiedChapter[] = [];
 
-      // ADAPTER ROUTING
       if (provider === "api.bible") {
         const rawChapters = await bibleClient.getChapters(
           versionOriginalId,
@@ -842,7 +829,6 @@ class BibleState {
 
       let mappedVerses: UnifiedVerse[] = [];
 
-      // ADAPTER ROUTING
       if (provider === "api.bible") {
         const rawVerses = await bibleClient.getVerses(
           versionOriginalId,
@@ -890,7 +876,6 @@ class BibleState {
     if (verseIndex === -1) return null;
 
     const verse = this.verses[verseIndex];
-
     if (verse.text) return verse.text;
 
     const { provider, originalId } = this.getProviderAndId(
@@ -916,10 +901,6 @@ class BibleState {
     }
   }
 
-  /**
-   * Switches the Bible version globally, retains the currently selected Book/Chapter,
-   * and seamlessly hot-swaps the live presentation slides if a Bible cue is active.
-   */
   async switchBibleVersionLive(newVersionId: string) {
     const targetBook = bibleState.selectedBook;
     const targetChapter = bibleState.selectedChapter;
@@ -970,7 +951,6 @@ class BibleState {
       title: `${book?.name} ${chapter?.number}`,
       artist: versionAbbr,
       sections: bibleState.verses.map((v) => {
-        // ALWAYS use the loaded text or the loading placeholder
         const textToChunk = v.text || "(Loading...)";
         const chunks = chunkProse(textToChunk, linesPerSlide, currentFontScale);
         return {
@@ -1026,7 +1006,7 @@ class BibleState {
   }
 
   // ----------------------------------------
-  // DB HELPER LAYER
+  // DB HELPER LAYER (With Read-Only Blockers)
   // ----------------------------------------
   private cacheDB = {
     get: async <T>(key: string): Promise<T | null> => {
@@ -1048,6 +1028,8 @@ class BibleState {
     },
 
     set: async (key: string, payload: any, customTtlMs?: number) => {
+      if (settingsState.isReadOnly) return;
+
       try {
         const timestamp = customTtlMs ? Date.now() + customTtlMs : Date.now();
         await setBibleCacheAPI(key, JSON.stringify(payload), timestamp);
@@ -1057,6 +1039,9 @@ class BibleState {
     },
 
     delete: async (key: string) => {
+      // SILENT GUARD: Prevent DB mutation if locked
+      if (settingsState.isReadOnly) return;
+
       try {
         await deleteBibleCacheAPI(key);
       } catch (err) {
@@ -1065,6 +1050,9 @@ class BibleState {
     },
 
     clearAll: async () => {
+      // SILENT GUARD: Prevent DB mutation if locked
+      if (settingsState.isReadOnly) return;
+
       try {
         await clearBibleCacheAPI();
       } catch (err) {

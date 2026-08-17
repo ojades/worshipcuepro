@@ -66,6 +66,17 @@ pub fn run() {
             .on_window_event(|window, event| match event {
                 tauri::WindowEvent::CloseRequested { .. } => {
                     if window.label() == "main" {
+                        if let Some(pool) = window.try_state::<crate::db::DbPool>() {
+                            if let Ok(conn) = pool.get() {
+                                let _ = conn.execute_batch("
+                                    PRAGMA wal_checkpoint(TRUNCATE);
+                                    PRAGMA journal_mode = DELETE;
+                                ");
+                            }
+                        }
+
+                        let _ = commands::db::settings::force_release_lock(window.app_handle().clone());
+
                         window.app_handle().exit(0);
                     }
                 }
@@ -158,6 +169,8 @@ pub fn run() {
             commands::db::settings::set_db_setting,
             commands::db::settings::set_core_workspace,
             commands::db::settings::get_core_workspace,
+            commands::db::settings::check_and_acquire_lock,
+            commands::db::settings::force_release_lock,
             commands::db::shoot::fetch_shoot_slides,
             commands::db::shoot::fetch_all_shoots,
             commands::db::shoot::save_shoot,

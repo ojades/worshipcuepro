@@ -70,11 +70,21 @@ export interface TextFormatConfig {
   textStrokeWidth: number; // in px
   textStrokeColor: string;
   dropShadow: boolean;
+  referenceFontFamily: string;
+  referenceFontSizeScale: number;
+  referenceFontWeight: string;
+  referenceTextTransform: string;
 }
 export interface DisplayConfig {
   textScale?: number;
   textVAlign?: "top" | "middle" | "bottom";
-  referencePosition?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
+  referencePosition?:
+    | "bottom-right"
+    | "bottom-left"
+    | "top-right"
+    | "top-left"
+    | "bottom-center"
+    | "top-center";
   textFormat?: TextFormatConfig;
   vGap?: number;
 }

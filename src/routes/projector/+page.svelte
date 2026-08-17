@@ -6,6 +6,8 @@
         type ExtendedPayload,
     } from "$lib/components/layout/display/ProjectorDisplay.svelte";
     import { fontState } from "$lib/state/fonts.svelte";
+    import { settingsState } from "$lib/state/settings.svelte";
+    import { getCoreWorkspaceAPI } from "$lib/commands/settings-db";
 
     // Store payloads separately
     let presentationPayload = $state<ExtendedPayload>({
@@ -31,7 +33,12 @@
     let unlistenControls: UnlistenFn;
 
     onMount(async () => {
-        await fontState.loadFonts();
+        const coreWorkspace = await getCoreWorkspaceAPI();
+        if (coreWorkspace) {
+            settingsState.workspacePath = coreWorkspace;
+
+            await fontState.loadFonts();
+        }
         unlistenPresentation = await listen<ExtendedPayload>(
             "presentation-update",
             (event) => {
