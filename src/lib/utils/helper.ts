@@ -61,13 +61,13 @@ export function chunkProse(
   maxLines: number,
   fontScale: number = 1.0,
 ): string[] {
-  // 1. Flatten the text to eliminate arbitrary copy-paste line breaks
+  // Flatten the text to eliminate arbitrary copy-paste line breaks
   const normalizedText = text.replace(/\s*\n\s*/g, " ").trim();
 
-  // NEW: Default to 5 lines if the operator has "Auto" (0) selected
+  // Default to 5 lines if the operator has "Auto" (0) selected
   const effectiveLines = maxLines && maxLines > 0 ? maxLines : 6;
 
-  // NEW: Base capacity is ~45 chars per line.
+  // Base capacity is ~45 chars per line.
   // Divide by fontScale so huge fonts force smaller chunks. (Min scale 0.5)
   const maxChars = Math.floor((effectiveLines * 45) / Math.max(fontScale, 0.5));
 
@@ -75,7 +75,7 @@ export function chunkProse(
 
   const chunks: string[] = [];
 
-  // 2. Break text into natural clauses using punctuation.
+  // Break text into natural clauses using punctuation.
   const clauses = normalizedText.match(/[^.?!;:,]+[.?!;:,]*["')\]]*\s*/g) || [
     normalizedText,
   ];
@@ -106,7 +106,7 @@ export function chunkProse(
     const cleanClause = clause.trim();
     if (!cleanClause) return;
 
-    // 3. If a single phrase is MASSIVE, split it smartly by words
+    // If a single phrase is MASSIVE, split it smartly by words
     if (cleanClause.length > maxChars) {
       if (currentChunk) {
         chunks.push(currentChunk.trim());
@@ -131,7 +131,7 @@ export function chunkProse(
         }
       });
     } else {
-      // 4. Normal Clause. Group them if possible!
+      // Normal Clause. Group them if possible!
       const potentialLength =
         currentChunk.length + cleanClause.length + (currentChunk ? 1 : 0);
 
@@ -145,6 +145,34 @@ export function chunkProse(
   });
 
   if (currentChunk) chunks.push(currentChunk.trim());
+
+  // If the last slide has 3 or fewer words, fix the imbalance.
+  if (chunks.length > 1) {
+    const lastChunk = chunks[chunks.length - 1];
+    const lastWordCount = lastChunk.split(/\s+/).length;
+
+    if (lastWordCount <= 3) {
+      const prevChunk = chunks[chunks.length - 2];
+      const combined = prevChunk + " " + lastChunk;
+
+      // If combining them only slightly exceeds the character limit (e.g. a 15% grace margin), merge them into one slide.
+      // (15% overage is usually visually fine since char counts are estimates anyway).
+      if (combined.length <= maxChars * 1.15) {
+        chunks.pop(); // remove the tiny last chunk
+        chunks[chunks.length - 1] = combined; // overwrite the previous chunk with the combined text
+      } else {
+        // Otherwise, it's too long for one slide. Let's balance the words equally across the last two slides.
+        chunks.pop();
+        chunks.pop();
+
+        const combinedWords = combined.split(/\s+/);
+        const midIndex = Math.ceil(combinedWords.length / 2);
+
+        chunks.push(combinedWords.slice(0, midIndex).join(" "));
+        chunks.push(combinedWords.slice(midIndex).join(" "));
+      }
+    }
+  }
 
   return chunks;
 }

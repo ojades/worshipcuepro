@@ -34,7 +34,7 @@ jobs:
         run: yarn install
 
       - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           API_BIBLE_KEY: ${{ secrets.BIBLE_API_KEY }}
@@ -47,3 +47,4 @@ jobs:
           releaseBody: "Automated Windows release."
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: true
