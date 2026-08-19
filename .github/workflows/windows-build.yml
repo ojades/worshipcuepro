@@ -40,8 +40,8 @@ jobs:
           API_BIBLE_KEY: ${{ secrets.BIBLE_API_KEY }}
           YOUVERSION_API_KEY: ${{ secrets.YOUVERSION_API_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          # The action automatically replaces __VERSION__ with the version from your tauri.conf.json
           tagName: app-v__VERSION__
           releaseName: "WorshipCuePro v__VERSION__ Win"
           releaseBody: "Automated Windows release."
