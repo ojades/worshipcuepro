@@ -49,3 +49,23 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
+
+      - name: Extract App Version
+        run: |
+          $config = Get-Content src-tauri\tauri.conf.json -Raw | ConvertFrom-Json
+          echo "VERSION=$($config.version)" >> $env:GITHUB_ENV
+
+      - name: Download Assets from Draft Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir dist-assets
+          gh release download app-v${{ env.VERSION }} --dir dist-assets
+
+      - name: Sync Updates to Public Bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 sync dist-assets s3://worshipcuepro-updates/ --endpoint-url ${{ secrets.BUCKET_ENDPOINT }}
