@@ -26,14 +26,13 @@
         typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
     onMount(async () => {
-        const coreWorkspace = await getCoreWorkspaceAPI();
-        if (coreWorkspace) {
-            settingsState.workspacePath = coreWorkspace;
-
-            await fontState.loadFonts();
-        }
         if (isTauri()) {
-            // --- NATIVE TAURI MODE ---
+            const coreWorkspace = await getCoreWorkspaceAPI();
+            if (coreWorkspace) {
+                settingsState.workspacePath = coreWorkspace;
+
+                await fontState.loadFonts();
+            }
             const { listen, emit } = await import("@tauri-apps/api/event");
 
             unlistenPresentation = await listen<PresentationPayload>(
@@ -69,7 +68,23 @@
 
                 // Expecting incoming WebSocket payloads to specify an event type
                 if (data.type === "presentation-update") {
-                    presentationPayload = data.payload;
+                    let payload = data.payload;
+
+                    if (
+                        !isTauri() &&
+                        payload.liveBackground?.url?.includes(
+                            "asset://localhost",
+                        )
+                    ) {
+                        const decodedUrl = decodeURIComponent(
+                            payload.liveBackground.url,
+                        );
+                        const filename = decodedUrl.split(/[/\\]/).pop();
+                        if (filename) {
+                            payload.liveBackground.url = `/media/${encodeURIComponent(filename)}`;
+                        }
+                    }
+                    presentationPayload = payload;
                 } else if (data.type === "controls-update") {
                     controlsPayload = data.payload;
                 } else if (data.text) {

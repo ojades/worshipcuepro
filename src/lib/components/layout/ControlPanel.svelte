@@ -21,7 +21,7 @@
         liveText: presentation.liveText,
         nextText: presentation.liveNextText,
         liveBackground: presentation.liveBackground,
-        liveMedia: presentation.liveMedia,
+
         isBlackout: presentation.isBlackout,
         isTextCleared: presentation.isTextCleared,
         liveReference: presentation.liveReference,
@@ -141,7 +141,7 @@
             {#if previewTab === "audience"}
                 <ProjectorDisplay display={displayPayload} />
 
-                {#if !presentation.liveText && !presentation.liveBackground && !presentation.liveMedia && !presentation.isBlackout}
+                {#if !presentation.liveText && !presentation.liveBackground && !presentation.isBlackout}
                     <div
                         class="absolute inset-0 flex items-center justify-center pointer-events-none z-40"
                     >

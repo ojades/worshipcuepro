@@ -1,7 +1,6 @@
 <!-- src/lib/components/layout/display/StageDisplay.svelte -->
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { settingsState } from "$lib/state/settings.svelte";
     import type { ExtendedPayload } from "./ProjectorDisplay.svelte";
     import { LOADING_SLIDE_TEXT } from "$lib/types/models";
 
@@ -351,7 +350,7 @@
         <!-- NEXT SLIDE (Frosted Glass) -->
         {#if display.stageShowNext !== false && display.nextText}
             <div
-                class="flex-[2] cq-p flex flex-col relative bg-zinc-950/80 backdrop-blur-xl animate-in slide-in-from-bottom-4 z-20"
+                class="flex-[2] cq-p flex flex-col relative bg-zinc-950/70 backdrop-blur-xl animate-in slide-in-from-bottom-4 z-20"
             >
                 <div
                     class="next-text-container flex-1 w-full flex {horizontalAlignmentClass} justify-center px-8"

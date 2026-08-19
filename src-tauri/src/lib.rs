@@ -117,8 +117,9 @@ pub fn run() {
 
                 let tx_clone = tx.clone();
                 let cache_clone = cache.clone();
+                let app_handle_clone = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    obs::start_server(tx_clone, cache_clone).await;
+                    obs::start_server(tx_clone, cache_clone, app_handle_clone).await;
                 });
 
                 Ok(())
