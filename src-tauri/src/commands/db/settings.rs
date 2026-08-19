@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use tauri::Manager;
 use tauri::State;
 
@@ -90,6 +91,17 @@ pub fn get_core_workspace(app_handle: tauri::AppHandle) -> Result<Option<String>
     }
 }
 
+fn get_session_id() -> &'static str {
+    static SESSION_ID: OnceLock<String> = OnceLock::new();
+    SESSION_ID.get_or_init(|| {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        format!("Active Session ({}_{})", timestamp, std::process::id())
+    })
+}
+
 #[tauri::command]
 pub fn check_and_acquire_lock(app_handle: tauri::AppHandle) -> Result<String, String> {
     let app_dir = app_handle.path().app_data_dir().unwrap();
@@ -109,30 +121,58 @@ pub fn check_and_acquire_lock(app_handle: tauri::AppHandle) -> Result<String, St
         .unwrap_or(media_dir);
     let lock_path = db_dir.join("worshipcue.lock");
 
+    let my_session = get_session_id();
+
     if lock_path.exists() {
-        OWNS_LOCK.store(false, Ordering::SeqCst);
-        let owner =
-            fs::read_to_string(&lock_path).unwrap_or_else(|_| "Another Operator".to_string());
-        Ok(owner)
+        let owner = fs::read_to_string(&lock_path).unwrap_or_default();
+
+        // Check if WE are the ones who wrote this file
+        if owner == my_session {
+            OWNS_LOCK.store(true, Ordering::SeqCst);
+            Ok("".to_string()) // Returning empty string means "You are editing"
+        } else {
+            // Someone else (or a cloud sync) owns this file
+            OWNS_LOCK.store(false, Ordering::SeqCst);
+            let display_owner = if owner.is_empty() {
+                "Another Operator".to_string()
+            } else {
+                owner
+            };
+            Ok(display_owner)
+        }
     } else {
-        // Create lock and mark that WE own it
+        // Free! Create the lock file and write our unique ID into it
         OWNS_LOCK.store(true, Ordering::SeqCst);
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let _ = fs::write(&lock_path, format!("Active Session ({})", timestamp));
+        let _ = fs::write(&lock_path, my_session);
         Ok("".to_string())
     }
 }
 
 #[tauri::command]
 pub fn force_release_lock(app_handle: tauri::AppHandle) -> Result<(), String> {
-    release_lock_on_exit(&app_handle);
+    let app_dir = app_handle.path().app_data_dir().unwrap();
+    let config_path = app_dir.join("wcp_core.json");
+    let config: CoreConfig = fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+
+    let media_dir = config
+        .workspace_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| app_dir.clone());
+    let db_dir = config
+        .db_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or(media_dir);
+
+    // FIX: Unconditionally delete the lockfile so the Override button works
+    let _ = fs::remove_file(db_dir.join("worshipcue.lock"));
+
     Ok(())
 }
 
-// Safe exit function that only deletes the lock if we own it
+// Safe exit function that only deletes the lock if we truly own it
 pub fn release_lock_on_exit(app_handle: &tauri::AppHandle) {
     if OWNS_LOCK.load(Ordering::SeqCst) {
         if let Ok(app_dir) = app_handle.path().app_data_dir() {
@@ -147,7 +187,15 @@ pub fn release_lock_on_exit(app_handle: &tauri::AppHandle) {
                         .db_path
                         .map(std::path::PathBuf::from)
                         .unwrap_or(media_dir);
-                    let _ = fs::remove_file(db_dir.join("worshipcue.lock"));
+
+                    let lock_path = db_dir.join("worshipcue.lock");
+
+                    // Double check that a cloud sync didn't steal it right before we closed
+                    if let Ok(content) = fs::read_to_string(&lock_path) {
+                        if content == get_session_id() {
+                            let _ = fs::remove_file(lock_path);
+                        }
+                    }
                 }
             }
         }
