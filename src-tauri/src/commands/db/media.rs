@@ -188,7 +188,6 @@ pub fn bulk_delete_media(pool: State<'_, DbPool>, ids: Vec<String>) -> Result<()
     Ok(())
 }
 
-// Keep your existing async file copy command
 #[tauri::command]
 pub async fn bulk_copy_media(files: Vec<(String, String)>) -> Result<(), String> {
     let mut handles = vec![];

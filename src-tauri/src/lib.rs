@@ -62,6 +62,7 @@ async fn broadcast_payload(
 pub fn run() {
     let http_client = Client::new();
     tauri::Builder::default()
+            .plugin(tauri_plugin_updater::Builder::new().build())
             .plugin(tauri_plugin_process::init())
             .on_window_event(|window, event| match event {
                 tauri::WindowEvent::CloseRequested { .. } => {
@@ -75,7 +76,7 @@ pub fn run() {
                             }
                         }
 
-                        let _ = commands::db::settings::force_release_lock(window.app_handle().clone());
+                        commands::db::settings::release_lock_on_exit(window.app_handle());
 
                         window.app_handle().exit(0);
                     }
@@ -100,7 +101,7 @@ pub fn run() {
                             .message(format!("WorshipCuePro failed to initialize its database. Please ensure the app has folder permissions.\n\nError: {}", e))
                             .title("Critical Startup Error")
                             .kind(tauri_plugin_dialog::MessageDialogKind::Error)
-                            .blocking_show(); // <--- CRITICAL FIX: Forces the dialog to stay open so you can read it!
+                            .blocking_show();
 
                         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)));
                     }

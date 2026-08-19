@@ -371,12 +371,18 @@ class MediaState {
 
     if (workspace) {
       mediaDirPath = await join(workspace, "media");
-      if (!(await exists(mediaDirPath)))
+      if (!(await exists(mediaDirPath))) {
         await mkdir(mediaDirPath, { recursive: true });
+      }
     }
 
     const fileCopyJobs: [string, string][] = [];
     const mediaToInsert: MediaInsert[] = [];
+    let skippedCount = 0;
+
+    const existingFilenames = new Set(
+      this.allMedia.map((m) => m.filename.toLowerCase()),
+    );
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -388,20 +394,28 @@ class MediaState {
         ? "video"
         : "image";
 
+      if (existingFilenames.has(name.toLowerCase())) {
+        skippedCount++;
+        continue;
+      }
+
       let dbFilePath = filePath;
 
       if (workspace) {
-        let targetFileName = fullFileName;
-        let finalFilePath = await join(mediaDirPath, targetFileName);
+        const finalFilePath = await join(mediaDirPath, fullFileName);
 
-        if (await exists(finalFilePath)) {
-          const uniqueId = crypto.randomUUID().split("-")[0];
-          targetFileName = `${name}-${uniqueId}.${extension}`;
-          finalFilePath = await join(mediaDirPath, targetFileName);
+        const isAlreadyInWorkspace =
+          filePath.replace(/\\/g, "/").toLowerCase() ===
+          finalFilePath.replace(/\\/g, "/").toLowerCase();
+
+        if (isAlreadyInWorkspace) {
+          dbFilePath = fullFileName;
+        } else if (await exists(finalFilePath)) {
+          dbFilePath = fullFileName;
+        } else {
+          fileCopyJobs.push([filePath, finalFilePath]);
+          dbFilePath = fullFileName;
         }
-
-        fileCopyJobs.push([filePath, finalFilePath]);
-        dbFilePath = targetFileName;
       }
 
       mediaToInsert.push({
@@ -411,6 +425,8 @@ class MediaState {
         type: mediaType,
         category: targetCategory,
       });
+
+      existingFilenames.add(name.toLowerCase());
     }
 
     if (fileCopyJobs.length > 0) {
@@ -427,10 +443,19 @@ class MediaState {
 
     await this.loadAll();
     this.isImporting = false;
-    systemState.addAlert({
-      message: "Media imported successfully.",
-      type: "success",
-    });
+
+    const importCount = mediaToInsert.length;
+    if (importCount > 0) {
+      systemState.addAlert({
+        message: `Imported ${importCount} file(s). ${skippedCount > 0 ? `Skipped ${skippedCount} duplicate(s).` : ""}`,
+        type: "success",
+      });
+    } else if (skippedCount > 0) {
+      systemState.addAlert({
+        message: `Skipped ${skippedCount} file(s) that were already in the library.`,
+        type: "info",
+      });
+    }
   }
 
   async updateCategories(ids: string[], newCategory: string) {

@@ -24,6 +24,8 @@
         getCoreWorkspaceAPI,
         setCoreWorkspaceAPI,
     } from "$lib/commands/settings-db";
+    import { systemState } from "$lib/state/system.svelte";
+    import AutoUpdater from "$lib/components/layout/AutoUpdater.svelte";
 
     let { children } = $props();
 
@@ -88,6 +90,38 @@
             ]);
 
             isAppReady = true;
+
+            setInterval(async () => {
+                if (!settingsState.workspacePath) return;
+
+                const currentLockOwner = await invoke<string>(
+                    "check_and_acquire_lock",
+                );
+
+                if (currentLockOwner !== "" && !settingsState.isReadOnly) {
+                    settingsState.isReadOnly = true;
+                    settingsState.lockOwner = currentLockOwner;
+
+                    systemState.addAlert({
+                        message:
+                            "Read-Only mode activated. Another operator took control.",
+                        type: "warning",
+                        timeout: 8000,
+                    });
+                } else if (
+                    currentLockOwner === "" &&
+                    settingsState.isReadOnly
+                ) {
+                    settingsState.isReadOnly = false;
+                    settingsState.lockOwner = "";
+                    systemState.addAlert({
+                        message:
+                            "Lock released! You now have full editing access.",
+                        type: "success",
+                        timeout: 8000,
+                    });
+                }
+            }, 15000);
         } catch (error) {
             console.error("Failed to load resources:", error);
             await updateStatus("Error Loading Resources");
@@ -205,6 +239,7 @@
     <div class="flex-1 flex flex-col min-h-0 overflow-hidden relative">
         {@render children()}
     </div>
+    <AutoUpdater />
     <Alert />
     <GlobalShortcuts />
 {:else}

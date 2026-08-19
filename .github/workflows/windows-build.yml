@@ -39,6 +39,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           API_BIBLE_KEY: ${{ secrets.BIBLE_API_KEY }}
           YOUVERSION_API_KEY: ${{ secrets.YOUVERSION_API_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           # The action automatically replaces __VERSION__ with the version from your tauri.conf.json
           tagName: app-v__VERSION__

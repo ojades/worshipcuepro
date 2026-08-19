@@ -633,6 +633,13 @@
   dependencies:
     "@tauri-apps/api" "^2.10.1"
 
+"@tauri-apps/plugin-updater@~2":
+  version "2.10.1"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/plugin-updater/-/plugin-updater-2.10.1.tgz#ea0efd766890394b6c719b9fc21de7da0029c69c"
+  integrity sha512-NFYMg+tWOZPJdzE/PpFj2qfqwAWwNS3kXrb1tm1gnBJ9mYzZ4WDRrwy8udzWoAnfGCHLuePNLY1WVCNHnh3eRA==
+  dependencies:
+    "@tauri-apps/api" "^2.10.1"
+
 "@tiptap/core@3.30.1", "@tiptap/core@^3.30.1":
   version "3.30.1"
   resolved "https://registry.yarnpkg.com/@tiptap/core/-/core-3.30.1.tgz#74e7fca7dfdf3b1cc878ce7647aded90f885d63f"
