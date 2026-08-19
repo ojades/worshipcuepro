@@ -349,7 +349,7 @@
         </div>
 
         <!-- NEXT SLIDE (Frosted Glass) -->
-        {#if display.stageShowNext !== false}
+        {#if display.stageShowNext !== false && display.nextText}
             <div
                 class="flex-[2] cq-p flex flex-col relative bg-zinc-950/80 backdrop-blur-xl animate-in slide-in-from-bottom-4 z-20"
             >
