@@ -44,8 +44,8 @@ jobs:
 
         with:
           tagName: app-v__VERSION__
-          releaseName: "WorshipCuePro v__VERSION__ Win"
-          releaseBody: "Automated Windows release."
+          releaseName: "WorshipCuePro v__VERSION"
+          releaseBody: "Latest release."
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
