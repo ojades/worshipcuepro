@@ -467,14 +467,20 @@
                                     : ''}"
                             >
                                 {#if result.type === "media" && safeUrl}
-                                    {#if result.payload.type === "video"}
+                                    {#if result.payload.thumbnail_url}
+                                        <img
+                                            src={result.payload.thumbnail_url}
+                                            alt={result.title}
+                                            class="w-full h-full object-cover"
+                                        />
+                                    {:else if result.payload.type === "video" && safeUrl}
                                         <video
                                             src="{safeUrl}#t=0.1"
                                             class="w-full h-full object-cover"
                                             preload="metadata"
                                             muted
                                         ></video>
-                                    {:else}
+                                    {:else if safeUrl}
                                         <img
                                             src={safeUrl}
                                             alt={result.title}
