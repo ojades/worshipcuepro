@@ -48,12 +48,11 @@
                 }
             });
 
-            // Once installed, restart the app instantly
             await relaunch();
         } catch (error) {
             console.error("Update failed:", error);
             isDownloading = false;
-            alert("Update failed to install. Please check your connection.");
+            alert("Update failed to install. " + error);
         }
     }
 </script>
