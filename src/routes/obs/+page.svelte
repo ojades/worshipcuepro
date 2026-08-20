@@ -13,7 +13,6 @@
         subText: "",
     });
 
-    // Hold the custom templates received from the server
     let customTemplates = $state({
         lyric: "",
         bible: "",
@@ -22,13 +21,11 @@
     let ws: WebSocket;
     let reconnectTimer: number;
 
-    // --- TEMPLATE PARSER ---
+    let filterType = $state<string | null>(null);
+
     function renderTemplate(template: string, text: string, subText?: string) {
         if (!template) return "";
-
-        // Convert newlines to <br/> tags so they render properly in raw HTML
         const formattedText = text.replace(/\n/g, "<br/>");
-
         return template
             .replace(/{{text}}/g, formattedText)
             .replace(/{{subText}}/g, subText || "");
@@ -51,9 +48,7 @@
                 }
 
                 const data = message.payload;
-                console.log(data);
 
-                // Grab custom templates if the server sent them
                 if (data.templates) {
                     customTemplates = data.templates;
                 }
@@ -61,7 +56,11 @@
                 if (data.type === null || data.text === "") {
                     activeCue = { type: null, text: "", subText: "" };
                 } else {
-                    activeCue = data;
+                    if (!filterType || data.type === filterType) {
+                        activeCue = data;
+                    } else {
+                        activeCue = { type: null, text: "", subText: "" };
+                    }
                 }
             } catch (err) {
                 console.error("Failed to parse cue data:", err);
@@ -70,19 +69,12 @@
 
         ws.onclose = () => {
             activeCue = { type: null, text: "", subText: "" };
-            console.log(
-                "Disconnected. Attempting to reconnect in 2 seconds...",
-            );
             reconnectTimer = setTimeout(connectWebSocket, 2000);
-        };
-
-        ws.onerror = (err) => {
-            console.error("WebSocket error:", err);
-            ws.close();
         };
     }
 
     onMount(() => {
+        filterType = new URLSearchParams(window.location.search).get("type");
         connectWebSocket();
     });
 
@@ -92,10 +84,6 @@
             ws.close();
         }
         clearTimeout(reconnectTimer);
-    });
-
-    $effect(() => {
-        console.log(customTemplates);
     });
 </script>
 
@@ -121,14 +109,12 @@
             <!-- BIBLE RENDERER -->
             {#if activeCue.type === "bible"}
                 {#if customTemplates.bible?.trim()}
-                    <!-- Render Custom HTML -->
                     {@html renderTemplate(
                         customTemplates.bible,
                         activeCue.text,
                         activeCue.subText,
                     )}
                 {:else}
-                    <!-- Fallback Default UI -->
                     <div
                         class="bg-zinc-900/90 backdrop-blur-md border-l-4 border-violet-500 rounded-r-2xl shadow-2xl p-6 wcp-bible-cont"
                     >
@@ -154,14 +140,12 @@
                 <!-- LYRIC RENDERER -->
             {:else if activeCue.type === "lyric"}
                 {#if customTemplates.lyric?.trim()}
-                    <!-- Render Custom HTML -->
                     {@html renderTemplate(
                         customTemplates.lyric,
                         activeCue.text,
                         activeCue.subText,
                     )}
                 {:else}
-                    <!-- Fallback Default UI -->
                     <div class="text-center w-full wcp-lyric-cont">
                         <p
                             class="text-white text-5xl font-bold drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] whitespace-pre-wrap wcp-lyric-text"
