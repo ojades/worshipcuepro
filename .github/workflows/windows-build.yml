@@ -62,6 +62,13 @@ jobs:
           mkdir dist-assets
           gh release download app-v${{ env.VERSION }} --dir dist-assets
 
+      - name: Rewrite latest.json URLs for R2
+        run: |
+          $jsonPath = "dist-assets/latest.json"
+          $content = Get-Content $jsonPath -Raw
+          $content = $content -replace 'https://github.com/ojades/worshipcuepro/releases/download/app-v[^/]+', 'https://pub-476fcfea486849dbb44781f977ba0e65.r2.dev'
+          Set-Content -Path $jsonPath -Value $content
+
       - name: Sync Updates to Public Bucket
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
