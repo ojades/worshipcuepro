@@ -98,7 +98,30 @@ fn get_session_id() -> &'static str {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis();
-        format!("Active Session ({}_{})", timestamp, std::process::id())
+
+        let pid = std::process::id();
+
+        // Check for macOS/Linux (USER) or Windows (USERNAME) environment variables
+        let user = std::env::var("USER")
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_else(|_| "Unknown Operator".to_string());
+
+        // Check for Windows (COMPUTERNAME) or macOS/Linux (HOSTNAME) environment variables
+        let host = std::env::var("COMPUTERNAME")
+            .or_else(|_| std::env::var("HOSTNAME"))
+            .unwrap_or_else(|_| {
+                // If environment variables fail (common on macOS GUI apps), ask the OS directly
+                std::process::Command::new("hostname")
+                    .output()
+                    .ok()
+                    .filter(|out| out.status.success())
+                    .and_then(|out| String::from_utf8(out.stdout).ok())
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_else(|| "Unknown PC".to_string())
+            });
+
+        // Construct a highly readable identity string
+        format!("{} on {} (ID: {}_{})", user, host, timestamp, pid)
     })
 }
 

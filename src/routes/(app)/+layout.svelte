@@ -33,6 +33,12 @@
     let needsSetup = $state(false);
     let initStatus = $state("INITIALIZING ENGINE...");
 
+    let formattedLockOwner = $derived(
+        settingsState.lockOwner
+            ? settingsState.lockOwner.split("(ID:")[0].trim()
+            : "Another Operator",
+    );
+
     async function updateStatus(message: string) {
         initStatus = message.toUpperCase();
         console.log(`[Startup] ${initStatus}`);
@@ -45,7 +51,7 @@
 
     async function forceBreakLock() {
         await invoke("force_release_lock");
-        await invoke("check_and_acquire_lock"); // Re-acquire it for ourselves
+        await invoke("check_and_acquire_lock");
         settingsState.isReadOnly = false;
         settingsState.lockOwner = "";
     }
@@ -221,7 +227,8 @@
                     class="flex items-center gap-2 text-xs font-semibold tracking-wide uppercase"
                 >
                     <span class="text-base">🔒</span>
-                    <span>Read Only Mode Active</span>
+                    <!-- FIX: Show the actual operator's identity here -->
+                    <span>Locked by: {formattedLockOwner}</span>
                 </div>
 
                 <div class="w-px h-4 bg-amber-500/30"></div>
