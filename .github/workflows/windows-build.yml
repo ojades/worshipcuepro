@@ -44,7 +44,7 @@ jobs:
 
         with:
           tagName: app-v__VERSION__
-          releaseName: "WorshipCuePro v__VERSION"
+          releaseName: "WorshipCuePro v__VERSION__"
           releaseBody: "Latest release."
           releaseDraft: true
           prerelease: false

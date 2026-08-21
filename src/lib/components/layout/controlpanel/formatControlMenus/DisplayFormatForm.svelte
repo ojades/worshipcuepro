@@ -312,10 +312,12 @@
         {#if target === "projector"}
             <div class="space-y-1.5 mb-2">
                 <label
+                    for="ref-pos"
                     class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
                     >Location on Screen</label
                 >
                 <select
+                    id="ref-pos"
                     value={displayConfig?.referencePosition || "bottom-right"}
                     onchange={(e) =>
                         updateDisplay(
@@ -361,10 +363,12 @@
             <!-- Ref Weight -->
             <div class="flex-1 space-y-1.5">
                 <label
+                    for="ref-font-weight"
                     class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground"
                     >Weight</label
                 >
                 <select
+                    id="ref-font-weight"
                     value={formatConfig?.referenceFontWeight || "bold"}
                     onchange={(e) =>
                         updateFormat(

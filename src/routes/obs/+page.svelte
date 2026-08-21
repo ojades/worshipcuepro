@@ -98,13 +98,17 @@
 </svelte:head>
 
 <!-- The Canvas (1920x1080) -->
-<div class="w-screen h-screen flex flex-col justify-end pb-16 px-24">
+<div
+    class="w-screen h-screen flex flex-col pb-16 px-24 {activeCue.text
+        ? 'wcp-body'
+        : ''}"
+>
     {#if activeCue.type !== null}
         <!-- Lower Third Container with entrance/exit animations -->
         <div
             in:fly={{ y: 50, duration: 400, delay: 100 }}
             out:fade={{ duration: 200 }}
-            class="w-full max-w-7xl mx-auto flex flex-col gap-2"
+            class="w-full max-w-7xl mx-auto flex flex-col gap-2 wcp-wrapper"
         >
             <!-- BIBLE RENDERER -->
             {#if activeCue.type === "bible"}
