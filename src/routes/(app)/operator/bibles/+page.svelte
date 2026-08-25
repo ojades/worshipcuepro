@@ -7,12 +7,14 @@
         Loader2,
         BookOpen,
         ChevronDown,
+        ListPlus,
     } from "@lucide/svelte";
     import { bibleState } from "$lib/state/bible.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import { goto } from "$app/navigation";
     import type { FtsSearchResult } from "$lib/commands/bible-db";
+    import AddToPlaylistMenu from "$lib/components/ui/AddToPlaylistMenu.svelte";
 
     // Local UI State
     let searchInput: HTMLInputElement;
@@ -668,8 +670,21 @@
 
                         {#if hoveredVerseId === verse.id}
                             <div
-                                class="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2 z-50"
                             >
+                                <AddToPlaylistMenu
+                                    cueId={verse.id}
+                                    cueType="bible"
+                                    align="right"
+                                    direction="down"
+                                >
+                                    <button
+                                        class="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 shadow-lg transition-all scale-95 hover:scale-100 flex items-center gap-2"
+                                        title="Add to Playlist"
+                                    >
+                                        <ListPlus size={16} />
+                                    </button>
+                                </AddToPlaylistMenu>
                                 <button
                                     onclick={(e) => {
                                         e.stopPropagation();

@@ -20,7 +20,7 @@ import { presentation } from "./presentation.svelte";
 
 const CACHE_TTL_MS = 20 * 24 * 60 * 60 * 1000; // 20 Days
 
-const BOOK_NAMES = [
+export const BOOK_NAMES = [
   "Genesis",
   "Exodus",
   "Leviticus",
@@ -88,7 +88,7 @@ const BOOK_NAMES = [
   "Jude",
   "Revelation",
 ];
-const BOOK_CODES = [
+export const BOOK_CODES = [
   "GEN",
   "EXO",
   "LEV",
@@ -1003,6 +1003,36 @@ class BibleState {
     };
 
     return bibleCue;
+  }
+
+  async firePlaylistVerse(verseId: string, playlistItemId?: string) {
+    const parts = verseId.split(".");
+    if (parts.length < 3) return;
+    const bookId = parts[0];
+    const chapterNumStr = parts[1];
+
+    await this.selectBook(bookId);
+    const targetChapter = this.chapters.find((c) => c.number === chapterNumStr);
+
+    if (targetChapter) {
+      await this.selectChapter(targetChapter.id);
+
+      const targetVerse = this.verses.find((v) => v.id === verseId);
+      if (targetVerse) {
+        if (!targetVerse.text) {
+          await this.resolveVerseText(targetVerse.id);
+        }
+
+        const cue: any = await this.generateChapterCue(targetVerse.id);
+        if (playlistItemId) cue.playlist_item_id = playlistItemId;
+
+        presentation.fire(
+          cue,
+          `verse_${targetVerse.id}`,
+          `slide_${targetVerse.id}_0`,
+        );
+      }
+    }
   }
 
   // ----------------------------------------

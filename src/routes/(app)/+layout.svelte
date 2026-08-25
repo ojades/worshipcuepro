@@ -26,6 +26,7 @@
     } from "$lib/commands/settings-db";
     import { systemState } from "$lib/state/system.svelte";
     import AutoUpdater from "$lib/components/layout/AutoUpdater.svelte";
+    import { playlists } from "$lib/state/playlists.svelte";
 
     let { children } = $props();
 
@@ -93,6 +94,7 @@
                 bibleState.init(),
                 shootState.loadAll(),
                 fontState.loadFonts(),
+                playlists.loadAll(),
             ]);
 
             isAppReady = true;
@@ -138,7 +140,6 @@
         try {
             let coreWorkspace = await getCoreWorkspaceAPI();
 
-            // Check legacy local storage one last time for migration
             const legacySettingsStr = localStorage.getItem("wcp_settings");
             const legacyWorkspace = legacySettingsStr
                 ? JSON.parse(legacySettingsStr).workspacePath
@@ -153,7 +154,6 @@
             }
 
             if (coreWorkspace) {
-                // FIX: Assign locally, DO NOT use settingsState.update()
                 settingsState.workspacePath = coreWorkspace;
 
                 await updateStatus("Connecting to Database...");
@@ -183,14 +183,12 @@
         }
     });
 
-    // FIX: Updated to accept both paths and pass them to the Rust backend
     async function handleWorkspaceSelected(
         mediaPath: string,
         dbPath: string | null,
     ) {
         await updateStatus("Configuring Workspace...");
 
-        // Ensure both directories get a neat "worshipcuepro" folder created inside them
         const saveMediaPath = await settingsState.parseWorkspaceDir(mediaPath);
         const saveDbPath = dbPath
             ? await settingsState.parseWorkspaceDir(dbPath)
@@ -227,7 +225,6 @@
                     class="flex items-center gap-2 text-xs font-semibold tracking-wide uppercase"
                 >
                     <span class="text-base">🔒</span>
-                    <!-- FIX: Show the actual operator's identity here -->
                     <span>Locked by: {formattedLockOwner}</span>
                 </div>
 

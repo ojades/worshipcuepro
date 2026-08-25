@@ -11,6 +11,7 @@
     import { playlists } from "$lib/state/playlists.svelte";
     import { dndzone, type DndEvent } from "svelte-dnd-action";
     import { convertFileSrc } from "@tauri-apps/api/core";
+    import { bibleState } from "$lib/state/bible.svelte";
 
     let { onBrowseLibrary } = $props<{ onBrowseLibrary: () => void }>();
 
@@ -94,12 +95,20 @@
 
                     <button
                         class="flex-1 flex flex-col items-start text-left overflow-hidden outline-none min-w-0 py-0.5 gap-1"
-                        onclick={() =>
-                            presentation.fire({
-                                ...cue,
-                                id: cue._originalId,
-                                asset_url: cue.asset_url,
-                            })}
+                        onclick={() => {
+                            if (cue.type === "bible") {
+                                bibleState.firePlaylistVerse(
+                                    cue._originalId,
+                                    cue.playlist_item_id,
+                                );
+                            } else {
+                                presentation.fire({
+                                    ...cue,
+                                    id: cue._originalId,
+                                    asset_url: cue.asset_url,
+                                });
+                            }
+                        }}
                     >
                         <div class="flex items-start gap-3 w-full">
                             <!-- Standardized 16:9 Thumbnail / Icon Box -->

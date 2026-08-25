@@ -17,7 +17,7 @@
     let editName = $state("");
 
     onMount(() => {
-        playlists.loadAll();
+        if (playlists.allPlaylists.length === 0) playlists.loadAll();
     });
 
     let filteredPlaylists = $derived(

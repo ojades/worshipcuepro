@@ -18,6 +18,7 @@ import {
   removeCueFromPlaylistAPI,
   type PlaylistMeta,
 } from "$lib/commands/playlist-db";
+import { bibleState, BOOK_CODES, BOOK_NAMES } from "./bible.svelte";
 
 export class PlaylistsState {
   allPlaylists = $state<PlaylistMeta[]>([]);
@@ -128,6 +129,16 @@ export class PlaylistsState {
               cue.raw_lyrics || "",
               cue.lines_per_slide || 0,
             );
+          } else if (cue.type === "bible") {
+            const parts = cue.id.split(".");
+            if (parts.length >= 3) {
+              const bookIndex = BOOK_CODES.indexOf(parts[0]);
+              const bookName =
+                bookIndex !== -1 ? BOOK_NAMES[bookIndex] : parts[0];
+              cue.title = `${bookName} ${parts[1]}:${parts[2]}`;
+            } else {
+              cue.title = cue.id;
+            }
           }
           return cue;
         }),
@@ -226,6 +237,9 @@ export class PlaylistsState {
           newCue.title = "Loading Song...";
         } else if (cueType === "shoot") {
           newCue.title = "Loading Shoot...";
+        } else if (cueType === "bible") {
+          const v = bibleState.verses.find((v) => v.id === cueId);
+          newCue.title = v ? v.reference : "Bible Scripture";
         }
 
         presentation.activePlaylist.cues = [

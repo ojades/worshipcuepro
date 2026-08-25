@@ -16,7 +16,7 @@
         FastForward,
         X,
         Link2,
-        ListPlus, // <-- NEW: Import ListPlus
+        ListPlus,
     } from "@lucide/svelte";
     import { media, type Media } from "$lib/state/media.svelte";
     import { onMount } from "svelte";
@@ -25,12 +25,10 @@
         confirmDialog,
         type ConfirmDialogOptions,
     } from "$lib/utils/helper";
-    import { invoke } from "@tauri-apps/api/core";
     import { emit } from "@tauri-apps/api/event";
-    import AddToPlaylistMenu from "$lib/components/ui/AddToPlaylistMenu.svelte"; // <-- NEW: Import Menu
+    import AddToPlaylistMenu from "$lib/components/ui/AddToPlaylistMenu.svelte";
 
-    // ... [KEEP EXISTING STATE VARIABLES] ...
-    let activeTab = $state<"images" | "videos">("videos");
+    let activeType = $state<"all" | "images" | "videos">("all");
     let activeCategory = $state<string>("All");
     let searchQuery = $state("");
     let mediaMetadata = $state<
@@ -48,11 +46,10 @@
     let localDuration = $state(0);
     let syncVideoNode = $state<HTMLVideoElement | null>(null);
 
-    // --- NEW: YouTube Modal State ---
+    // --- YouTube Modal State ---
     let showYoutubeModal = $state(false);
     let youtubeUrlInput = $state("");
-
-    // ... [KEEP EXISTING FUNCTIONS] ...
+    let lastSelectedIndex = $state<number | null>(null);
 
     $effect(() => {
         if (syncVideoNode && presentation.currentBackground) {
@@ -142,11 +139,12 @@
             const matchesSearch = (item.filename || "")
                 .toLowerCase()
                 .includes(searchQuery.toLowerCase());
-            const matchesTab =
-                item.type === (activeTab === "images" ? "image" : "video");
+            const matchesType =
+                activeType === "all" ||
+                item.type === (activeType === "images" ? "image" : "video");
             const matchesCategory =
                 activeCategory === "All" || item.category === activeCategory;
-            return matchesSearch && matchesTab && matchesCategory;
+            return matchesSearch && matchesType && matchesCategory;
         }),
     );
 
@@ -204,7 +202,6 @@
         }
     }
 
-    // --- NEW: Trigger Download ---
     async function submitYoutubeDownload() {
         if (!youtubeUrlInput.trim()) return;
         const url = youtubeUrlInput;
@@ -216,7 +213,31 @@
             activeCategory === "All" ? "Uncategorized" : activeCategory,
         );
         if (success) {
-            activeTab = "videos"; // Switch to videos tab to see the new download
+            activeType = "all";
+        }
+    }
+
+    function handleMediaClick(e: MouseEvent, item: Media, index: number) {
+        if (isSelectMode) {
+            if (e.shiftKey && lastSelectedIndex !== null) {
+                const start = Math.min(lastSelectedIndex, index);
+                const end = Math.max(lastSelectedIndex, index);
+
+                for (let i = start; i <= end; i++) {
+                    selectedIds.add(filteredMedia[i].id);
+                }
+
+                selectedIds = new Set(selectedIds);
+            } else {
+                toggleSelection(item.id);
+            }
+
+            lastSelectedIndex = index;
+        } else {
+            media.setActive(item);
+            if (item.asset_url) {
+                presentation.setBackground(item.asset_url, item.type);
+            }
         }
     }
 </script>
@@ -224,7 +245,6 @@
 <div
     class="flex-1 flex flex-col bg-zinc-950 h-full overflow-hidden rounded-tl-2xl border-t border-l border-zinc-800 relative"
 >
-    <!-- YOUTUBE DOWNLOAD MODAL -->
     {#if showYoutubeModal}
         <div
             class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
@@ -423,18 +443,26 @@
             {:else}
                 <!-- ... [Keep standard header exact as it was] ... -->
                 <div class="flex items-center justify-between">
-                    <div class="flex gap-8">
+                    <div class="flex gap-6">
                         <button
-                            onclick={() => (activeTab = "images")}
-                            class="pb-2 px-1 transition-all duration-200 border-b-2 {activeTab ===
+                            onclick={() => (activeType = "all")}
+                            class="pb-2 px-1 transition-all duration-200 border-b-2 {activeType ===
+                            'all'
+                                ? 'border-violet-500 text-zinc-100 font-medium'
+                                : 'border-transparent text-zinc-400 hover:text-zinc-300'}"
+                            >All Types</button
+                        >
+                        <button
+                            onclick={() => (activeType = "images")}
+                            class="pb-2 px-1 transition-all duration-200 border-b-2 {activeType ===
                             'images'
                                 ? 'border-violet-500 text-zinc-100 font-medium'
                                 : 'border-transparent text-zinc-400 hover:text-zinc-300'}"
                             >Images</button
                         >
                         <button
-                            onclick={() => (activeTab = "videos")}
-                            class="pb-2 px-1 transition-all duration-200 border-b-2 {activeTab ===
+                            onclick={() => (activeType = "videos")}
+                            class="pb-2 px-1 transition-all duration-200 border-b-2 {activeType ===
                             'videos'
                                 ? 'border-violet-500 text-zinc-100 font-medium'
                                 : 'border-transparent text-zinc-400 hover:text-zinc-300'}"
@@ -533,7 +561,7 @@
             <div
                 class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 auto-rows-max pb-4"
             >
-                {#each filteredMedia as item (item.id)}
+                {#each filteredMedia as item, i (item.id)}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <!-- FIX: Added hover:z-50 to ensure dropdown overlaps other cards -->
@@ -546,19 +574,7 @@
                                 item.asset_url
                               ? 'border-violet-500/50 bg-violet-900/10'
                               : 'border-zinc-800/50 hover:border-violet-500/30'}"
-                        onclick={() => {
-                            if (isSelectMode) {
-                                toggleSelection(item.id);
-                            } else {
-                                media.setActive(item);
-                                if (item.asset_url) {
-                                    presentation.setBackground(
-                                        item.asset_url,
-                                        item.type,
-                                    );
-                                }
-                            }
-                        }}
+                        onclick={(e) => handleMediaClick(e, item, i)}
                     >
                         {#if isSelectMode}
                             <div
