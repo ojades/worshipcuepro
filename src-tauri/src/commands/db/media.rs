@@ -1,5 +1,6 @@
 // /src-tauri/src/commands/db/media.rs
-use crate::db::DbPool;
+use crate::db::DbState;
+use libsql::{params, Value};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tokio::fs;
@@ -10,7 +11,7 @@ pub struct MediaRow {
     pub filename: String,
     pub filepath: String,
     #[serde(rename = "type")]
-    pub media_type: String, // 'type' is a reserved keyword in Rust
+    pub media_type: String,
     pub category: String,
     pub thumbnail_path: Option<String>,
     pub created_at: Option<String>,
@@ -33,158 +34,187 @@ pub struct MediaPaths {
 }
 
 #[tauri::command]
-pub fn fetch_all_media(pool: State<'_, DbPool>) -> Result<Vec<MediaRow>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+pub async fn fetch_all_media(state: State<'_, DbState>) -> Result<Vec<MediaRow>, String> {
+    let db_lock = state.lock().await;
 
-    let mut stmt = conn
-        .prepare("SELECT id, filename, filepath, type, category, thumbnail_path, created_at FROM media ORDER BY created_at DESC")
-        .map_err(|e| e.to_string())?;
-
-    let iter = stmt
-        .query_map([], |row| {
-            Ok(MediaRow {
-                id: row.get(0)?,
-                filename: row.get(1)?,
-                filepath: row.get(2)?,
-                media_type: row.get(3)?,
-                category: row.get(4)?,
-                thumbnail_path: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })
+    let mut rows = db_lock
+        .conn
+        .query(
+            "SELECT id, filename, filepath, type, category, thumbnail_path, created_at FROM media ORDER BY created_at DESC",
+            (),
+        )
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut media = Vec::new();
-    for item in iter {
-        media.push(item.map_err(|e| e.to_string())?);
+    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+        media.push(MediaRow {
+            id: row.get(0).unwrap_or_default(),
+            filename: row.get(1).unwrap_or_default(),
+            filepath: row.get(2).unwrap_or_default(),
+            media_type: row.get(3).unwrap_or_default(),
+            category: row.get(4).unwrap_or_default(),
+            thumbnail_path: row.get(5).ok(),
+            created_at: row.get(6).ok(),
+        });
     }
 
     Ok(media)
 }
 
 #[tauri::command]
-pub fn update_category_by_name(
-    pool: State<'_, DbPool>,
+pub async fn update_category_by_name(
+    state: State<'_, DbState>,
     old_name: String,
     new_name: String,
 ) -> Result<(), String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
-    conn.execute(
-        "UPDATE media SET category = ?1 WHERE category = ?2",
-        [&new_name, &old_name],
-    )
-    .map_err(|e| e.to_string())?;
+    let db_lock = state.lock().await;
+
+    db_lock
+        .conn
+        .execute(
+            "UPDATE media SET category = ?1 WHERE category = ?2",
+            params![new_name, old_name],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn update_media_thumbnail(
-    pool: State<'_, DbPool>,
+pub async fn update_media_thumbnail(
+    state: State<'_, DbState>,
     id: String,
     thumbnail_path: String,
 ) -> Result<(), String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
-    conn.execute(
-        "UPDATE media SET thumbnail_path = ?1 WHERE id = ?2",
-        [&thumbnail_path, &id],
-    )
-    .map_err(|e| e.to_string())?;
+    let db_lock = state.lock().await;
+
+    db_lock
+        .conn
+        .execute(
+            "UPDATE media SET thumbnail_path = ?1 WHERE id = ?2",
+            params![thumbnail_path, id],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn bulk_insert_media(pool: State<'_, DbPool>, items: Vec<MediaInsert>) -> Result<(), String> {
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
+pub async fn bulk_insert_media(
+    state: State<'_, DbState>,
+    items: Vec<MediaInsert>,
+) -> Result<(), String> {
+    let db_lock = state.lock().await;
+    let tx = db_lock
+        .conn
+        .transaction()
+        .await
+        .map_err(|e| e.to_string())?;
 
-    // Transactions are vastly faster for bulk inserts
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
-        let mut stmt = tx
-            .prepare("INSERT INTO media (id, filename, filepath, type, category) VALUES (?1, ?2, ?3, ?4, ?5)")
-            .map_err(|e| e.to_string())?;
-
-        for item in items {
-            stmt.execute((
-                &item.id,
-                &item.filename,
-                &item.filepath,
-                &item.media_type,
-                &item.category,
-            ))
-            .map_err(|e| e.to_string())?;
-        }
+    for item in items {
+        tx.execute(
+            "INSERT INTO media (id, filename, filepath, type, category) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                item.id,
+                item.filename,
+                item.filepath,
+                item.media_type,
+                item.category
+            ],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     }
-    tx.commit().map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn bulk_update_media_category(
-    pool: State<'_, DbPool>,
+pub async fn bulk_update_media_category(
+    state: State<'_, DbState>,
     ids: Vec<String>,
     new_category: String,
 ) -> Result<(), String> {
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
-        let mut stmt = tx
-            .prepare("UPDATE media SET category = ?1 WHERE id = ?2")
-            .map_err(|e| e.to_string())?;
-        for id in ids {
-            stmt.execute([&new_category, &id])
-                .map_err(|e| e.to_string())?;
-        }
+    let db_lock = state.lock().await;
+    let tx = db_lock
+        .conn
+        .transaction()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for id in ids {
+        tx.execute(
+            "UPDATE media SET category = ?1 WHERE id = ?2",
+            params![new_category.clone(), id],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     }
-    tx.commit().map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn fetch_media_paths(
-    pool: State<'_, DbPool>,
+pub async fn fetch_media_paths(
+    state: State<'_, DbState>,
     ids: Vec<String>,
 ) -> Result<Vec<MediaPaths>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    // Build parameterized IN clause string: "?, ?, ?"
+    let db_lock = state.lock().await;
+
     let placeholders = vec!["?"; ids.len()].join(", ");
     let query = format!(
         "SELECT filepath, thumbnail_path FROM media WHERE id IN ({})",
         placeholders
     );
 
-    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+    // Convert Vec<String> into Vec<libsql::Value>
+    let param_values: Vec<Value> = ids.into_iter().map(|id| Value::Text(id)).collect();
 
-    let iter = stmt
-        .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
-            Ok(MediaPaths {
-                filepath: row.get(0)?,
-                thumbnail_path: row.get(1)?,
-            })
-        })
+    let mut rows = db_lock
+        .conn
+        .query(&query, param_values)
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut paths = Vec::new();
-    for p in iter {
-        paths.push(p.map_err(|e| e.to_string())?);
+    while let Ok(Some(row)) = rows.next().await {
+        paths.push(MediaPaths {
+            filepath: row.get(0).unwrap_or_default(),
+            thumbnail_path: row.get(1).ok(),
+        });
     }
+
     Ok(paths)
 }
 
 #[tauri::command]
-pub fn bulk_delete_media(pool: State<'_, DbPool>, ids: Vec<String>) -> Result<(), String> {
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
-        let mut stmt = tx
-            .prepare("DELETE FROM media WHERE id = ?1")
+pub async fn bulk_delete_media(state: State<'_, DbState>, ids: Vec<String>) -> Result<(), String> {
+    let db_lock = state.lock().await;
+    let tx = db_lock
+        .conn
+        .transaction()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for id in ids {
+        tx.execute("DELETE FROM media WHERE id = ?1", params![id])
+            .await
             .map_err(|e| e.to_string())?;
-        for id in ids {
-            stmt.execute([&id]).map_err(|e| e.to_string())?;
-        }
     }
-    tx.commit().map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
     Ok(())
 }
 

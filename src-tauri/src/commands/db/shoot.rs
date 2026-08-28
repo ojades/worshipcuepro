@@ -1,6 +1,6 @@
-// src-tauri/src/commands/db/shoot.rs
-use crate::db::DbPool;
-use rusqlite::OptionalExtension;
+// /src-tauri/src/commands/db/shoot.rs
+use crate::db::DbState;
+use libsql::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -35,11 +35,12 @@ pub struct FullShoot {
 }
 
 #[tauri::command]
-pub fn fetch_all_shoots(pool: State<'_, DbPool>) -> Result<Vec<ShootMeta>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+pub async fn fetch_all_shoots(state: State<'_, DbState>) -> Result<Vec<ShootMeta>, String> {
+    let db_lock = state.lock().await;
 
-    let mut stmt = conn
-        .prepare(
+    let mut rows = db_lock
+        .conn
+        .query(
             "SELECT
                 sh.id,
                 sh.title,
@@ -48,152 +49,176 @@ pub fn fetch_all_shoots(pool: State<'_, DbPool>) -> Result<Vec<ShootMeta>, Strin
              LEFT JOIN shoot_slides ss ON sh.id = ss.shoot_id
              GROUP BY sh.id
              ORDER BY sh.created_at DESC",
+            (),
         )
-        .map_err(|e| e.to_string())?;
-
-    let iter = stmt
-        .query_map([], |row| {
-            Ok(ShootMeta {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                slide_count: row.get(2)?,
-            })
-        })
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut shoots = Vec::new();
-    for item in iter {
-        shoots.push(item.map_err(|e| e.to_string())?);
+    while let Ok(Some(row)) = rows.next().await {
+        shoots.push(ShootMeta {
+            id: row.get(0).unwrap_or_default(),
+            title: row.get(1).unwrap_or_default(),
+            slide_count: row.get(2).unwrap_or(0),
+        });
     }
+
     Ok(shoots)
 }
 
 #[tauri::command]
-pub fn fetch_shoot_slides(
-    pool: State<'_, DbPool>,
+pub async fn fetch_shoot_slides(
+    state: State<'_, DbState>,
     shoot_id: String,
 ) -> Result<Vec<ShootSlideRow>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+    let db_lock = state.lock().await;
 
-    let mut stmt = conn
-        .prepare(
+    let mut rows = db_lock
+        .conn
+        .query(
             "SELECT ps.id, ps.media_id, m.filepath, m.type as media_type, ps.sort_order, ps.text_content
              FROM shoot_slides ps
              LEFT JOIN media m ON ps.media_id = m.id
              WHERE ps.shoot_id = ?1
              ORDER BY ps.sort_order ASC",
+            params![shoot_id],
         )
-        .map_err(|e| e.to_string())?;
-
-    let iter = stmt
-        .query_map([&shoot_id], |row| {
-            Ok(ShootSlideRow {
-                id: row.get(0)?,
-                media_id: row.get(1)?,
-                filepath: row.get(2)?,
-                media_type: row.get(3)?,
-                sort_order: row.get(4)?,
-                text_content: row.get(5)?,
-            })
-        })
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut slides = Vec::new();
-    for item in iter {
-        slides.push(item.map_err(|e| e.to_string())?);
+    while let Ok(Some(row)) = rows.next().await {
+        slides.push(ShootSlideRow {
+            id: row.get(0).unwrap_or_default(),
+            media_id: row.get(1).ok(),
+            filepath: row.get(2).ok(),
+            media_type: row.get(3).ok(),
+            sort_order: row.get(4).ok(),
+            text_content: row.get(5).ok(),
+        });
     }
+
     Ok(slides)
 }
 
 #[tauri::command]
-pub fn save_shoot(
-    pool: State<'_, DbPool>,
+pub async fn save_shoot(
+    state: State<'_, DbState>,
     id: String,
     title: String,
     slides: Vec<SlideInsert>,
 ) -> Result<(), String> {
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
+    let db_lock = state.lock().await;
 
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
-        let existing: Option<String> = tx
-            .query_row("SELECT id FROM shoots WHERE id = ?1", [&id], |row| {
-                row.get(0)
-            })
-            .optional()
-            .map_err(|e| e.to_string())?;
+    let tx = db_lock
+        .conn
+        .transaction()
+        .await
+        .map_err(|e| e.to_string())?;
 
-        if existing.is_some() {
-            tx.execute("UPDATE shoots SET title = ?1 WHERE id = ?2", [&title, &id])
-                .map_err(|e| e.to_string())?;
-        } else {
-            tx.execute(
-                "INSERT INTO shoots (id, title) VALUES (?1, ?2)",
-                [&id, &title],
-            )
-            .map_err(|e| e.to_string())?;
-        }
+    // Check if shoot already exists
+    let mut exist_rows = tx
+        .query("SELECT id FROM shoots WHERE id = ?1", params![id.clone()])
+        .await
+        .map_err(|e| e.to_string())?;
 
-        tx.execute("DELETE FROM shoot_slides WHERE shoot_id = ?1", [&id])
-            .map_err(|e| e.to_string())?;
+    let existing = if let Ok(Some(_)) = exist_rows.next().await {
+        true
+    } else {
+        false
+    };
 
-        // Include text_content in the insert
-        let mut stmt = tx
-            .prepare("INSERT INTO shoot_slides (id, shoot_id, media_id, sort_order, text_content) VALUES (?1, ?2, ?3, ?4, ?5)")
-            .map_err(|e| e.to_string())?;
-
-        for (i, slide) in slides.iter().enumerate() {
-            let slide_id = uuid::Uuid::new_v4().to_string();
-            stmt.execute((
-                &slide_id,
-                &id,
-                &slide.media_id,
-                &(i as i32),
-                &slide.text_content,
-            ))
-            .map_err(|e| e.to_string())?;
-        }
+    if existing {
+        tx.execute(
+            "UPDATE shoots SET title = ?1 WHERE id = ?2",
+            params![title, id.clone()],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    } else {
+        tx.execute(
+            "INSERT INTO shoots (id, title) VALUES (?1, ?2)",
+            params![id.clone(), title],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     }
-    tx.commit().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "DELETE FROM shoot_slides WHERE shoot_id = ?1",
+        params![id.clone()],
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    for (i, slide) in slides.iter().enumerate() {
+        let slide_id = uuid::Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO shoot_slides (id, shoot_id, media_id, sort_order, text_content) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                slide_id,
+                id.clone(),
+                slide.media_id.clone(),
+                i as i32,
+                slide.text_content.clone()
+            ],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_shoot(pool: State<'_, DbPool>, id: String) -> Result<(), String> {
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
+pub async fn delete_shoot(state: State<'_, DbState>, id: String) -> Result<(), String> {
+    let db_lock = state.lock().await;
 
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
-        tx.execute("DELETE FROM shoot_slides WHERE shoot_id = ?1", [&id])
-            .map_err(|e| e.to_string())?;
-        tx.execute("DELETE FROM shoots WHERE id = ?1", [&id])
-            .map_err(|e| e.to_string())?;
-    }
-    tx.commit().map_err(|e| e.to_string())?;
+    let tx = db_lock
+        .conn
+        .transaction()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "DELETE FROM shoot_slides WHERE shoot_id = ?1",
+        params![id.clone()],
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.execute("DELETE FROM shoots WHERE id = ?1", params![id])
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn fetch_shoot(pool: State<'_, DbPool>, shoot_id: String) -> Result<Option<FullShoot>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+pub async fn fetch_shoot(
+    state: State<'_, DbState>,
+    shoot_id: String,
+) -> Result<Option<FullShoot>, String> {
+    let db_lock = state.lock().await;
 
-    let mut stmt = conn
-        .prepare("SELECT id, title FROM shoots WHERE id = ?1")
+    let mut rows = db_lock
+        .conn
+        .query(
+            "SELECT id, title FROM shoots WHERE id = ?1",
+            params![shoot_id],
+        )
+        .await
         .map_err(|e| e.to_string())?;
 
-    let mut iter = stmt
-        .query_map([&shoot_id], |row| {
-            Ok(FullShoot {
-                id: row.get(0)?,
-                title: row.get(1)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
-
-    if let Some(result) = iter.next() {
-        return Ok(Some(result.map_err(|e| e.to_string())?));
+    if let Ok(Some(row)) = rows.next().await {
+        return Ok(Some(FullShoot {
+            id: row.get(0).unwrap_or_default(),
+            title: row.get(1).unwrap_or_default(),
+        }));
     }
 
     Ok(None)

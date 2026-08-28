@@ -235,8 +235,10 @@ export class PlaylistsState {
           }
         } else if (cueType === "song") {
           newCue.title = "Loading Song...";
+          newCue.sections = [];
         } else if (cueType === "shoot") {
           newCue.title = "Loading Shoot...";
+          newCue.sections = [];
         } else if (cueType === "bible") {
           const v = bibleState.verses.find((v) => v.id === cueId);
           newCue.title = v ? v.reference : "Bible Scripture";

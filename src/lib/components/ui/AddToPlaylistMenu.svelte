@@ -12,9 +12,9 @@
         direction = "down",
         children,
         class: className = "",
-        onAdd, // Optional callback to run after successful add
+        onAdd,
     } = $props<{
-        cueId: string | string[]; // <-- FIX: Now accepts single string or array
+        cueId: string | string[];
         cueType?: "song" | "media" | "bible" | "presentation" | "shoot";
         align?: "left" | "right";
         direction?: "up" | "down";
@@ -26,14 +26,13 @@
     let isOpen = $state(false);
     let showSuccess = $state(false);
 
-    function handleAdd(playlistId: string) {
-        // FIX: Handle both single items and bulk arrays
+    async function handleAdd(playlistId: string) {
         if (Array.isArray(cueId)) {
             for (const id of cueId) {
-                playlists.addCueToPlaylist(playlistId, id, cueType);
+                await playlists.addCueToPlaylist(playlistId, id, cueType);
             }
         } else {
-            playlists.addCueToPlaylist(playlistId, cueId, cueType);
+            await playlists.addCueToPlaylist(playlistId, cueId, cueType);
         }
 
         isOpen = false;

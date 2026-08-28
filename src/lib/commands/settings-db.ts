@@ -15,8 +15,10 @@ export async function setDbSettingAPI(
 export async function setCoreWorkspaceAPI(
   path: string,
   dbPath: string | null = null,
+  tursoUrl: string | null = null,
+  tursoToken: string | null = null,
 ): Promise<void> {
-  await invoke("set_core_workspace", { path, dbPath });
+  await invoke("set_core_workspace", { path, dbPath, tursoUrl, tursoToken });
 }
 
 export async function getCoreWorkspaceAPI(): Promise<string | null> {

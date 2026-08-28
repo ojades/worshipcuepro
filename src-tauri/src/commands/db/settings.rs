@@ -1,5 +1,6 @@
 // /src-tauri/src/commands/db/settings.rs
-use crate::db::DbPool;
+use crate::db::DbState;
+use libsql::params;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
@@ -14,36 +15,50 @@ pub static OWNS_LOCK: AtomicBool = AtomicBool::new(false);
 struct CoreConfig {
     workspace_path: Option<String>,
     db_path: Option<String>,
+    turso_url: Option<String>,
+    turso_token: Option<String>,
 }
 
 #[tauri::command]
-pub fn get_db_setting(pool: State<'_, DbPool>, key: String) -> Result<Option<String>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+pub async fn get_db_setting(
+    state: State<'_, DbState>,
+    key: String,
+) -> Result<Option<String>, String> {
+    let db_lock = state.lock().await;
 
-    let mut stmt = conn
-        .prepare("SELECT value FROM settings WHERE key = ?1 LIMIT 1")
+    let mut rows = db_lock
+        .conn
+        .query(
+            "SELECT value FROM settings WHERE key = ?1 LIMIT 1",
+            params![key],
+        )
+        .await
         .map_err(|e| e.to_string())?;
 
-    let mut iter = stmt
-        .query_map([&key], |row| row.get::<_, String>(0))
-        .map_err(|e| e.to_string())?;
-
-    if let Some(result) = iter.next() {
-        return Ok(Some(result.map_err(|e| e.to_string())?));
+    if let Ok(Some(row)) = rows.next().await {
+        let val: String = row.get(0).map_err(|e| e.to_string())?;
+        return Ok(Some(val));
     }
 
     Ok(None)
 }
 
 #[tauri::command]
-pub fn set_db_setting(pool: State<'_, DbPool>, key: String, value: String) -> Result<(), String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+pub async fn set_db_setting(
+    state: State<'_, DbState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let db_lock = state.lock().await;
 
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [&key, &value],
-    )
-    .map_err(|e| e.to_string())?;
+    db_lock
+        .conn
+        .execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -53,6 +68,8 @@ pub fn set_core_workspace(
     app_handle: tauri::AppHandle,
     path: String,
     db_path: Option<String>,
+    turso_url: Option<String>,
+    turso_token: Option<String>,
 ) -> Result<(), String> {
     let app_dir = app_handle
         .path()
@@ -63,7 +80,9 @@ pub fn set_core_workspace(
 
     let config = CoreConfig {
         workspace_path: Some(path),
-        db_path, // NEW
+        db_path,
+        turso_url,
+        turso_token,
     };
 
     let json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
@@ -134,6 +153,16 @@ pub fn check_and_acquire_lock(app_handle: tauri::AppHandle) -> Result<String, St
         .and_then(|json| serde_json::from_str(&json).ok())
         .unwrap_or_default();
 
+    // If Turso is fully configured, skip file-based locking entirely!
+    let has_turso = config.turso_url.as_deref().unwrap_or("").trim().len() > 0
+        && config.turso_token.as_deref().unwrap_or("").trim().len() > 0;
+
+    if has_turso {
+        OWNS_LOCK.store(true, Ordering::SeqCst);
+        return Ok("".to_string());
+    }
+
+    // Otherwise, proceed with standard local file-based locking (for Dropbox/Syncthing users)
     let media_dir = config
         .workspace_path
         .map(std::path::PathBuf::from)
@@ -148,13 +177,10 @@ pub fn check_and_acquire_lock(app_handle: tauri::AppHandle) -> Result<String, St
 
     if lock_path.exists() {
         let owner = fs::read_to_string(&lock_path).unwrap_or_default();
-
-        // Check if WE are the ones who wrote this file
         if owner == my_session {
             OWNS_LOCK.store(true, Ordering::SeqCst);
-            Ok("".to_string()) // Returning empty string means "You are editing"
+            Ok("".to_string())
         } else {
-            // Someone else (or a cloud sync) owns this file
             OWNS_LOCK.store(false, Ordering::SeqCst);
             let display_owner = if owner.is_empty() {
                 "Another Operator".to_string()
@@ -164,7 +190,6 @@ pub fn check_and_acquire_lock(app_handle: tauri::AppHandle) -> Result<String, St
             Ok(display_owner)
         }
     } else {
-        // Free! Create the lock file and write our unique ID into it
         OWNS_LOCK.store(true, Ordering::SeqCst);
         let _ = fs::write(&lock_path, my_session);
         Ok("".to_string())
@@ -189,7 +214,6 @@ pub fn force_release_lock(app_handle: tauri::AppHandle) -> Result<(), String> {
         .map(std::path::PathBuf::from)
         .unwrap_or(media_dir);
 
-    // FIX: Unconditionally delete the lockfile so the Override button works
     let _ = fs::remove_file(db_dir.join("worshipcue.lock"));
 
     Ok(())
@@ -223,4 +247,10 @@ pub fn release_lock_on_exit(app_handle: &tauri::AppHandle) {
             }
         }
     }
+}
+
+#[tauri::command]
+pub async fn is_db_offline(db_state: tauri::State<'_, DbState>) -> Result<bool, String> {
+    let app_db = db_state.lock().await;
+    Ok(app_db.is_offline.load(Ordering::SeqCst))
 }

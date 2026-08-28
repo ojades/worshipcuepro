@@ -46,7 +46,7 @@
         try {
             await emit("app-startup-status", initStatus);
         } catch (e) {
-            // Ignore if emit fails or splash is already closed
+            // Ignore if emit fails
         }
     }
 
@@ -64,28 +64,23 @@
 
             await updateStatus("Verifying Workspace Lock...");
             const lockOwner = await invoke<string>("check_and_acquire_lock");
+            const isOffline = await invoke<boolean>("is_db_offline");
 
-            if (lockOwner !== "") {
+            if (isOffline) {
+                settingsState.isReadOnly = true;
+                settingsState.lockOwner = "(OFFLINE MODE)";
+                systemState.addAlert({
+                    message:
+                        "No internet connection. App is in Read-Only mode to protect cloud data.",
+                    type: "warning",
+                    timeout: 10000,
+                });
+            } else if (lockOwner !== "") {
                 settingsState.isReadOnly = true;
                 settingsState.lockOwner = lockOwner;
-                console.warn(
-                    `[Sync] Booting in Read-Only mode. Locked by: ${lockOwner}`,
-                );
             } else {
                 settingsState.isReadOnly = false;
             }
-
-            await updateStatus("Importing NKJV...");
-            await bibleState.importXmlBible(NKJV, "NKJV");
-
-            await updateStatus("Importing NIV...");
-            await bibleState.importSystemBible(NIV);
-
-            await updateStatus("Importing ERV...");
-            await bibleState.importSystemBible(ERV);
-
-            await updateStatus("Importing AMPC...");
-            await bibleState.importXmlBible(AMPC, "AMPC");
 
             await updateStatus("Loading Libraries...");
             await Promise.all([
@@ -97,16 +92,55 @@
                 playlists.loadAll(),
             ]);
 
+            // Set UI Ready BEFORE starting heavy background Bible imports!
             isAppReady = true;
 
+            // Background Bible verification & import (Non-blocking)
+            setTimeout(async () => {
+                try {
+                    await bibleState.importXmlBible(NKJV, "NKJV");
+                    await bibleState.importSystemBible(NIV);
+                    await bibleState.importSystemBible(ERV);
+                    await bibleState.importXmlBible(AMPC, "AMPC");
+                } catch (err) {
+                    console.warn("[Bible] Background import notice:", err);
+                }
+            }, 1000);
+
+            // Periodically check lock and offline status
             setInterval(async () => {
                 if (!settingsState.workspacePath) return;
 
+                const isCurrentlyOffline =
+                    await invoke<boolean>("is_db_offline");
+
+                if (isCurrentlyOffline) {
+                    if (
+                        !settingsState.isReadOnly ||
+                        settingsState.lockOwner !== "(OFFLINE MODE)"
+                    ) {
+                        settingsState.isReadOnly = true;
+                        settingsState.lockOwner = "(OFFLINE MODE)";
+                        systemState.addAlert({
+                            message:
+                                "Connection lost. App is in Read-Only mode.",
+                            type: "warning",
+                            timeout: 8000,
+                        });
+                    }
+                    return; // Skip operator lock check while offline
+                }
+
+                // If online, check standard operator lock
                 const currentLockOwner = await invoke<string>(
                     "check_and_acquire_lock",
                 );
 
-                if (currentLockOwner !== "" && !settingsState.isReadOnly) {
+                if (
+                    currentLockOwner !== "" &&
+                    (!settingsState.isReadOnly ||
+                        settingsState.lockOwner === "(OFFLINE MODE)")
+                ) {
                     settingsState.isReadOnly = true;
                     settingsState.lockOwner = currentLockOwner;
 
@@ -123,8 +157,7 @@
                     settingsState.isReadOnly = false;
                     settingsState.lockOwner = "";
                     systemState.addAlert({
-                        message:
-                            "Lock released! You now have full editing access.",
+                        message: "Online. Lock released!",
                         type: "success",
                         timeout: 8000,
                     });
@@ -146,9 +179,6 @@
                 : null;
 
             if (!coreWorkspace && legacyWorkspace) {
-                console.log(
-                    "[Migration] Moving workspace path to Rust Core Config...",
-                );
                 await setCoreWorkspaceAPI(legacyWorkspace);
                 coreWorkspace = legacyWorkspace;
             }
@@ -165,7 +195,7 @@
                     } catch (e) {
                         console.error("Failed to close splash screen:", e);
                     }
-                }, 500);
+                }, 300);
             } else {
                 needsSetup = true;
                 setTimeout(async () => {
@@ -174,7 +204,7 @@
                     } catch (e) {
                         console.error("Failed to close splash screen:", e);
                     }
-                }, 500);
+                }, 300);
             }
         } catch (fatalError) {
             console.error("Critical error during app startup:", fatalError);
@@ -224,19 +254,31 @@
                 <div
                     class="flex items-center gap-2 text-xs font-semibold tracking-wide uppercase"
                 >
-                    <span class="text-base">🔒</span>
-                    <span>Locked by: {formattedLockOwner}</span>
+                    <span class="text-base">
+                        {settingsState.lockOwner === "(OFFLINE MODE)"
+                            ? "☁️"
+                            : "🔒"}
+                    </span>
+                    <span>
+                        {#if settingsState.lockOwner === "(OFFLINE MODE)"}
+                            Offline (Read-Only)
+                        {:else}
+                            Locked by: {formattedLockOwner}
+                        {/if}
+                    </span>
                 </div>
 
-                <div class="w-px h-4 bg-amber-500/30"></div>
+                {#if settingsState.lockOwner !== "(OFFLINE MODE)"}
+                    <div class="w-px h-4 bg-amber-500/30"></div>
 
-                <button
-                    onclick={forceBreakLock}
-                    class="text-[10px] bg-amber-500/10 hover:bg-amber-500 hover:text-black px-3 py-1 rounded-full font-bold transition-colors border border-amber-500/30"
-                    title="Only do this if the other operator's laptop crashed or went offline."
-                >
-                    Override
-                </button>
+                    <button
+                        onclick={forceBreakLock}
+                        class="text-[10px] bg-amber-500/10 hover:bg-amber-500 hover:text-black px-3 py-1 rounded-full font-bold transition-colors border border-amber-500/30 cursor-pointer"
+                        title="Only do this if the other operator's laptop crashed or went offline."
+                    >
+                        Override
+                    </button>
+                {/if}
             </div>
         </div>
     {/if}

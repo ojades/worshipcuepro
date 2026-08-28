@@ -1,7 +1,8 @@
 <!-- /src/lib/components/layout/settings/WorkspaceSettings.svelte -->
 <script lang="ts">
     import { open, save } from "@tauri-apps/plugin-dialog";
-    import { writeTextFile, readTextFile } from "@tauri-apps/plugin-fs";
+    import { writeTextFile, readTextFile, exists } from "@tauri-apps/plugin-fs";
+    import { appDataDir } from "@tauri-apps/api/path";
     import { systemState } from "$lib/state/system.svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import { relaunch } from "@tauri-apps/plugin-process";
@@ -13,32 +14,38 @@
     import Download from "@lucide/svelte/icons/download";
     import Upload from "@lucide/svelte/icons/upload";
     import SettingsIcon from "@lucide/svelte/icons/settings";
-    import {
-        setCoreWorkspaceAPI,
-        getCoreWorkspaceAPI,
-    } from "$lib/commands/settings-db";
+    import { setCoreWorkspaceAPI } from "$lib/commands/settings-db";
     import { onMount } from "svelte";
-    import { invoke } from "@tauri-apps/api/core";
+    import { DatabaseZap, Trash2 } from "@lucide/svelte";
 
     let workspacePath = $derived(settingsState.workspacePath);
     let dbPath = $state<string | null>(null);
+    let tursoUrl = $state<string>("");
+    let tursoToken = $state<string>("");
+    let isTursoActive = $derived(tursoUrl.trim().length > 0);
 
     // Confirmation state for clearing cache
     let confirmClear = $state(false);
     let clearTimer: ReturnType<typeof setTimeout>;
 
     onMount(async () => {
-        // Fetch the raw config from Rust to see if there is an active split DB path
         try {
-            const configStr = await readTextFile("wcp_core.json", {
-                baseDir:
-                    window.__TAURI_INTERNALS__.plugins.path.BaseDirectory
-                        .AppData,
-            });
-            const config = JSON.parse(configStr);
-            dbPath = config.db_path || null;
+            // Resolve the AppData path using Tauri API path resolver
+            const dirPath = await appDataDir();
+            const configFilePath = `${dirPath}/wcp_core.json`;
+
+            const fileExists = await exists(configFilePath);
+            if (fileExists) {
+                const configStr = await readTextFile(configFilePath);
+                if (configStr) {
+                    const config = JSON.parse(configStr);
+                    dbPath = config.db_path || null;
+                    tursoUrl = config.turso_url || "";
+                    tursoToken = config.turso_token || "";
+                }
+            }
         } catch (e) {
-            // It's okay if this fails or falls back
+            console.error("Failed to load core config:", e);
         }
     });
 
@@ -53,7 +60,12 @@
             if (selectedDir && typeof selectedDir === "string") {
                 const savePath =
                     await settingsState.parseWorkspaceDir(selectedDir);
-                await setCoreWorkspaceAPI(savePath, dbPath);
+                await setCoreWorkspaceAPI(
+                    savePath,
+                    dbPath,
+                    tursoUrl,
+                    tursoToken,
+                );
                 await relaunch();
             }
         } catch (error) {
@@ -69,16 +81,17 @@
             const selectedDir = await open({
                 directory: true,
                 multiple: false,
-                title: "Select Cloud Database Location (e.g. Dropbox)",
+                title: "Select Local Database Location (e.g. Dropbox)",
             });
 
             if (selectedDir && typeof selectedDir === "string") {
                 const saveDbPath =
                     await settingsState.parseWorkspaceDir(selectedDir);
-                // Save the existing media path, but apply the new DB path
                 await setCoreWorkspaceAPI(
                     settingsState.workspacePath,
                     saveDbPath,
+                    tursoUrl,
+                    tursoToken,
                 );
                 await relaunch();
             }
@@ -90,10 +103,46 @@
         }
     }
 
+    async function handleSaveTurso() {
+        try {
+            await setCoreWorkspaceAPI(
+                settingsState.workspacePath,
+                dbPath,
+                tursoUrl.trim(),
+                tursoToken.trim(),
+            );
+            await relaunch();
+        } catch (error) {
+            systemState.addAlert({
+                message: "Failed to save Turso config.",
+                type: "error",
+            });
+        }
+    }
+
+    async function handleClearTurso() {
+        try {
+            tursoUrl = "";
+            tursoToken = "";
+            await setCoreWorkspaceAPI(
+                settingsState.workspacePath,
+                dbPath,
+                "",
+                "",
+            );
+            await relaunch();
+        } catch (error) {
+            systemState.addAlert({
+                message: "Failed to clear Turso config.",
+                type: "error",
+            });
+        }
+    }
+
     async function handleResetWorkspace() {
         try {
             const defaultPath = await settingsState.parseWorkspaceDir("");
-            await setCoreWorkspaceAPI(defaultPath, null); // Wipe out the split DB path on reset
+            await setCoreWorkspaceAPI(defaultPath);
             await relaunch();
         } catch (error) {
             systemState.addAlert({
@@ -187,8 +236,9 @@
         <p class="text-sm text-muted-foreground leading-relaxed">
             Select shared folders on your computer to store your database and
             media files. For best results, use a local sync tool like Syncthing
-            for Media, and <strong class="text-foreground">Dropbox</strong> for the
-            Database.
+            for Media, and <strong class="text-foreground"
+                >Turso Cloud Sync</strong
+            > for real-time multi-device database synchronization.
         </p>
     </div>
 
@@ -208,7 +258,7 @@
                     </h3>
                     <button
                         onclick={handleSelectWorkspace}
-                        class="text-xs font-bold uppercase text-neon-cyan hover:text-white transition-colors"
+                        class="text-xs font-bold uppercase text-neon-cyan hover:text-white transition-colors cursor-pointer"
                         >Change</button
                     >
                 </div>
@@ -221,6 +271,93 @@
             </div>
         </div>
 
+        <!-- Turso Cloud database card -->
+        <div
+            class="bg-card border {isTursoActive
+                ? 'border-violet-500/50 shadow-[0_0_15px_rgba(139,92,246,0.1)]'
+                : 'border-border'} rounded-xl p-6 shadow-sm flex flex-col gap-4 transition-all"
+        >
+            <div class="flex items-start gap-4">
+                <div
+                    class="p-3 {isTursoActive
+                        ? 'bg-violet-500/20 text-violet-400'
+                        : 'bg-zinc-800 text-zinc-400'} rounded-lg transition-colors"
+                >
+                    <DatabaseZap size={24} />
+                </div>
+                <div class="space-y-1 flex-1">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-semibold text-foreground">
+                            Turso Cloud Sync
+                        </h3>
+                        {#if isTursoActive}
+                            <span
+                                class="text-[10px] font-bold uppercase tracking-wider bg-violet-500/20 text-violet-400 px-2 py-0.5 rounded-full"
+                            >
+                                Active
+                            </span>
+                        {/if}
+                    </div>
+                    <p class="text-sm text-muted-foreground leading-relaxed">
+                        Provide your Turso database credentials to enable
+                        real-time, zero-conflict cloud syncing across all
+                        computers.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-3 pt-2 pl-16">
+                <div class="flex flex-col gap-1.5">
+                    <label
+                        for="turso-url"
+                        class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider"
+                        >Database URL</label
+                    >
+                    <input
+                        id="turso-url"
+                        type="text"
+                        bind:value={tursoUrl}
+                        placeholder="libsql://your-db-name.turso.io"
+                        class="bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:border-violet-500 focus:outline-none w-full font-mono text-xs"
+                    />
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label
+                        for="turso-token"
+                        class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider"
+                        >Auth Token</label
+                    >
+                    <input
+                        id="turso-token"
+                        type="password"
+                        bind:value={tursoToken}
+                        placeholder="ey..."
+                        class="bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:border-violet-500 focus:outline-none w-full font-mono text-xs"
+                    />
+                </div>
+                <div class="flex items-center justify-between pt-2">
+                    {#if isTursoActive}
+                        <button
+                            onclick={handleClearTurso}
+                            class="px-3 py-1.5 border border-red-500/20 text-red-400 hover:bg-red-950/20 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                        >
+                            <Trash2 size={14} /> Disconnect Cloud Sync
+                        </button>
+                    {:else}
+                        <div></div>
+                    {/if}
+
+                    <button
+                        onclick={handleSaveTurso}
+                        disabled={!tursoUrl.trim()}
+                        class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-lg text-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Save & Restart
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Database Path -->
         <div class="flex items-start gap-4 pt-2 border-t border-border">
             <div class="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg">
@@ -229,11 +366,11 @@
             <div class="space-y-2 flex-1">
                 <div class="flex items-center justify-between">
                     <h3 class="font-semibold text-foreground">
-                        Database Location
+                        Local Database Location
                     </h3>
                     <button
                         onclick={handleSelectDatabase}
-                        class="text-xs font-bold uppercase text-emerald-500 hover:text-white transition-colors"
+                        class="text-xs font-bold uppercase text-emerald-500 hover:text-white transition-colors cursor-pointer"
                         >Change</button
                     >
                 </div>
@@ -330,10 +467,8 @@
     >
         <Info size={20} class="text-blue-400 shrink-0" />
         <p>
-            <strong>Note:</strong> When you change your workspace folder, WorshipCuePro
-            will restart to load the database from the new location. Ensure your cloud
-            sync application is running and fully updated before opening the app on
-            a second computer.
+            <strong>Note:</strong> When you change your workspace folder or Turso
+            configuration, WorshipCuePro will restart to load from the new location.
         </p>
     </div>
 </div>

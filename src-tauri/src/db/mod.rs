@@ -1,20 +1,31 @@
 // /src-tauri/src/db/mod.rs
-use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::OptionalExtension;
+use libsql::{Builder, Connection, Database};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
+use tokio::sync::Mutex;
 
-pub type DbPool = r2d2::Pool<SqliteConnectionManager>;
+pub struct AppDb {
+    pub db: Arc<Database>,
+    pub conn: Connection,
+    pub is_offline: Arc<AtomicBool>,
+}
+
+pub type DbState = Arc<Mutex<AppDb>>;
 
 #[derive(Serialize, Deserialize, Default)]
 struct CoreConfig {
     workspace_path: Option<String>,
     db_path: Option<String>,
+    turso_url: Option<String>,
+    turso_token: Option<String>,
 }
 
-pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
+pub async fn init_db(app_handle: &AppHandle) -> Result<DbState, String> {
     let app_dir = app_handle
         .path()
         .app_data_dir()
@@ -23,14 +34,11 @@ pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
     fs::create_dir_all(&app_dir).map_err(|e| format!("Failed to create app data dir: {}", e))?;
 
     let config_path = app_dir.join("wcp_core.json");
-
-    // Read the config safely
     let config: CoreConfig = match fs::read_to_string(&config_path) {
         Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
         Err(_) => CoreConfig::default(),
     };
 
-    // Media directory logic
     let media_dir = config
         .workspace_path
         .map(PathBuf::from)
@@ -44,45 +52,141 @@ pub fn init_db(app_handle: &AppHandle) -> Result<DbPool, String> {
     fs::create_dir_all(&media_dir).unwrap_or_default();
     fs::create_dir_all(&db_dir).map_err(|e| format!("Failed to create DB dir: {}", e))?;
 
-    let db_path = db_dir.join("worshipcue.db");
+    let mut db_opt: Option<Arc<Database>> = None;
+    let is_offline_flag = Arc::new(AtomicBool::new(false));
 
-    println!(
-        "[WorshipCuePro] Media Workspace mounting at: {:?}",
-        media_dir
-    );
-    println!("[WorshipCuePro] Rust DB Engine mounting at: {:?}", db_path);
+    // --- FAULT-TOLERANT ENGINE ROUTER ---
+    if let (Some(mut url), Some(token)) = (config.turso_url, config.turso_token) {
+        if !url.trim().is_empty() && !token.trim().is_empty() {
+            if url.starts_with("turso://") {
+                url = url.replace("turso://", "libsql://");
+            }
 
-    let manager = SqliteConnectionManager::file(&db_path).with_init(|c| {
-        c.execute_batch(
+            println!("[WorshipCuePro] Attempting Turso Cloud Sync Engine boot...");
+            let replica_path = db_dir.join("wcp_replica.db");
+
+            match Builder::new_remote_replica(replica_path, url, token)
+                .build()
+                .await
+            {
+                Ok(raw_db) => {
+                    let db_arc = Arc::new(raw_db);
+                    db_opt = Some(Arc::clone(&db_arc));
+
+                    let sync_offline_flag = Arc::clone(&is_offline_flag);
+
+                    // Try initial handshake, but DO NOT abort if offline!
+                    println!("[Turso] Performing initial sync handshake with primary server...");
+                    if let Err(e) = db_arc.sync().await {
+                        eprintln!(
+                            "[Turso] Initial handshake failed, starting in OFFLINE mode. Error: {}",
+                            e
+                        );
+                        sync_offline_flag.store(true, Ordering::SeqCst);
+                    } else {
+                        println!("[Turso] Initial handshake successful!");
+                    }
+
+                    // Always launch the continuous sync loop. This allows the app to automatically
+                    // recover from offline mode when Wi-Fi is restored.
+                    let sync_db = Arc::clone(&db_arc);
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(Duration::from_secs(10)).await;
+                        loop {
+                            if let Err(e) = sync_db.sync().await {
+                                let err_msg = e.to_string();
+                                if !err_msg.contains("database is locked")
+                                    && !err_msg.contains("wal_insert_begin")
+                                {
+                                    // Set offline and log only if we weren't already offline
+                                    if !sync_offline_flag.load(Ordering::SeqCst) {
+                                        sync_offline_flag.store(true, Ordering::SeqCst);
+                                        eprintln!("[Turso] Network drop detected: {}", err_msg);
+                                    }
+                                }
+                            } else {
+                                // Sync succeeded! Clear offline flag if it was true.
+                                if sync_offline_flag.load(Ordering::SeqCst) {
+                                    sync_offline_flag.store(false, Ordering::SeqCst);
+                                    println!(
+                                        "[Turso] Network restored! Synced to cloud successfully."
+                                    );
+                                }
+                            }
+                            tokio::time::sleep(Duration::from_secs(15)).await;
+                        }
+                    });
+                }
+                Err(e) => {
+                    eprintln!("[Turso] Failed to initialize replica builder: {}. Falling back to Local SQLite.", e);
+                }
+            }
+        }
+    }
+
+    // --- LOCAL FALLBACK ---
+    let db = if let Some(d) = db_opt {
+        d // Turso builder succeeded (online or offline)
+    } else {
+        // Only trigger this if Turso is totally unconfigured or the builder fatally crashed
+        println!("[WorshipCuePro] Booting Local SQLite Engine...");
+        let local_path = db_dir.join("worshipcue.db");
+
+        let raw_db = Builder::new_local(local_path)
+            .build()
+            .await
+            .map_err(|e| format!("Failed to build local DB: {}", e))?;
+
+        Arc::new(raw_db)
+    };
+
+    // --- SELF-HEALING CONNECTION ---
+    let conn = match db.connect() {
+        Ok(c) => c,
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("file is not a database")
+                || err_str.contains("database disk image is malformed")
+            {
+                let replica_path = db_dir.join("wcp_replica.db");
+                if replica_path.exists() {
+                    let _ = std::fs::remove_file(&replica_path);
+                    return Err("Corrupted local sync file detected and automatically cleared. Please restart the app.".to_string());
+                }
+            }
+            return Err(format!("Failed to connect: {}", err_str));
+        }
+    };
+
+    // Apply performance pragmas
+    let _ = conn
+        .execute_batch(
             "
-                PRAGMA journal_mode = DELETE;
-                PRAGMA synchronous = NORMAL;
-                PRAGMA busy_timeout = 5000;
-                PRAGMA mmap_size = 268435456;
-                PRAGMA cache_size = -20000;
-                PRAGMA foreign_keys = ON;
-                PRAGMA temp_store = MEMORY;
-                ",
+            PRAGMA busy_timeout = 5000;
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA foreign_keys = ON;
+        ",
         )
-    });
+        .await;
 
-    let pool = r2d2::Pool::builder()
-        .max_size(5)
-        .build(manager)
-        .map_err(|e| format!("Failed to create pool: {}", e))?;
+    if let Err(e) = run_migrations(&conn).await {
+        eprintln!("[WorshipCuePro] Migration warning: {}", e);
+    }
 
-    run_migrations(&pool).map_err(|e| format!("Migration failed: {}", e))?;
-    auto_migrate_fts(&pool).map_err(|e| format!("FTS Auto-migration failed: {}", e))?;
+    if let Err(e) = auto_migrate_fts(&conn).await {
+        eprintln!("[WorshipCuePro] FTS auto-migration warning: {}", e);
+    }
 
-    Ok(pool)
+    let app_db = Arc::new(Mutex::new(AppDb {
+        db,
+        conn,
+        is_offline: is_offline_flag,
+    }));
+    Ok(app_db)
 }
 
-fn run_migrations(pool: &DbPool) -> Result<(), String> {
-    // FIX: Remove unwrap, bubble the error gracefully
-    let conn = pool
-        .get()
-        .map_err(|e| format!("Failed to connect to DB for migrations: {}", e))?;
-
+async fn run_migrations(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS songs (
@@ -146,7 +250,7 @@ fn run_migrations(pool: &DbPool) -> Result<(), String> {
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS bible_fts USING fts5(
-            version UNINDEXED,   -- Don't index the version ID, just use it for filtering
+            version UNINDEXED,
             reference,
             text,
             tokenize='unicode61'
@@ -180,43 +284,54 @@ fn run_migrations(pool: &DbPool) -> Result<(), String> {
         END;
         ",
     )
+    .await
     .map_err(|e| format!("Execute batch failed: {}", e))?;
 
-    let conn = pool.get().unwrap();
-    let _ = conn.execute("ALTER TABLE shoot_slides ADD COLUMN text_content TEXT", []);
+    let _ = conn
+        .execute("ALTER TABLE shoot_slides ADD COLUMN text_content TEXT", ())
+        .await;
 
     Ok(())
 }
 
-fn auto_migrate_fts(pool: &DbPool) -> Result<(), String> {
-    // FIX: Remove unwrap
-    let mut conn = pool
-        .get()
-        .map_err(|e| format!("Failed to connect to DB for FTS migration: {}", e))?;
+async fn auto_migrate_fts(conn: &Connection) -> Result<(), String> {
+    let mut fts_rows = conn
+        .query("SELECT COUNT(*) FROM songs_fts", ())
+        .await
+        .map_err(|e| e.to_string())?;
+    let songs_fts_count: i32 = if let Ok(Some(row)) = fts_rows.next().await {
+        row.get(0).unwrap_or(0)
+    } else {
+        0
+    };
 
-    let songs_fts_count: i32 = conn
-        .query_row("SELECT COUNT(*) FROM songs_fts", [], |r| r.get(0))
-        .unwrap_or(0);
-    let songs_count: i32 = conn
-        .query_row("SELECT COUNT(*) FROM songs", [], |r| r.get(0))
-        .unwrap_or(0);
+    let mut songs_rows = conn
+        .query("SELECT COUNT(*) FROM songs", ())
+        .await
+        .map_err(|e| e.to_string())?;
+    let songs_count: i32 = if let Ok(Some(row)) = songs_rows.next().await {
+        row.get(0).unwrap_or(0)
+    } else {
+        0
+    };
 
     if songs_count > 0 && songs_fts_count == 0 {
         println!("[WorshipCuePro] Backfilling FTS index for Songs...");
-        conn.execute(
-            "INSERT INTO songs_fts(id, title, artist, raw_lyrics) SELECT id, title, artist, raw_lyrics FROM songs",
-            []
-        ).map_err(|e| e.to_string())?;
+        let _ = conn.execute("INSERT INTO songs_fts(id, title, artist, raw_lyrics) SELECT id, title, artist, raw_lyrics FROM songs", ()).await;
     }
 
-    let versions_json: Option<String> = conn
-        .query_row(
+    let mut cache_rows = conn
+        .query(
             "SELECT data FROM bible_cache WHERE cache_key = 'system_bible_versions'",
-            [],
-            |row| row.get(0),
+            (),
         )
-        .optional()
+        .await
         .map_err(|e| e.to_string())?;
+    let versions_json: Option<String> = if let Ok(Some(row)) = cache_rows.next().await {
+        row.get(0).ok()
+    } else {
+        None
+    };
 
     let versions_json = match versions_json {
         Some(json) => json,
@@ -227,14 +342,18 @@ fn auto_migrate_fts(pool: &DbPool) -> Result<(), String> {
 
     for v in versions {
         if let Some(version_id) = v.get("id").and_then(|id| id.as_str()) {
-            let is_indexed: Option<i32> = conn
-                .query_row(
-                    "SELECT 1 FROM bible_fts WHERE version = ? LIMIT 1",
-                    [version_id],
-                    |row| row.get(0),
+            let mut check_rows = conn
+                .query(
+                    "SELECT 1 FROM bible_fts WHERE version = ?1 LIMIT 1",
+                    libsql::params![version_id],
                 )
-                .optional()
+                .await
                 .map_err(|e| e.to_string())?;
+            let is_indexed: Option<i32> = if let Ok(Some(row)) = check_rows.next().await {
+                row.get(0).ok()
+            } else {
+                None
+            };
 
             if is_indexed.is_none() {
                 println!(
@@ -242,22 +361,26 @@ fn auto_migrate_fts(pool: &DbPool) -> Result<(), String> {
                     version_id
                 );
 
-                let tx = conn.transaction().map_err(|e| e.to_string())?;
-
                 let like_pattern = format!("verses_{}_%", version_id);
-                let mut stmt = tx
-                    .prepare("SELECT data FROM bible_cache WHERE cache_key LIKE ?")
-                    .map_err(|e| e.to_string())?;
+                let mut verse_arrays: Vec<String> = Vec::new();
 
-                let verse_arrays: Vec<String> = stmt
-                    .query_map([&like_pattern], |row| row.get(0))
-                    .map_err(|e| e.to_string())?
-                    .filter_map(Result::ok)
-                    .collect();
+                if let Ok(mut verse_rows) = conn
+                    .query(
+                        "SELECT data FROM bible_cache WHERE cache_key LIKE ?1",
+                        libsql::params![like_pattern],
+                    )
+                    .await
+                {
+                    while let Ok(Some(row)) = verse_rows.next().await {
+                        if let Ok(data) = row.get(0) {
+                            verse_arrays.push(data);
+                        }
+                    }
+                }
 
-                let mut insert_stmt = tx
-                    .prepare("INSERT INTO bible_fts (version, reference, text) VALUES (?, ?, ?)")
-                    .map_err(|e| e.to_string())?;
+                let mut count = 0;
+                let chunk_size = 250;
+                let mut current_tx = conn.transaction().await.ok();
 
                 for arr_json in verse_arrays {
                     let verses: Vec<serde_json::Value> =
@@ -267,16 +390,35 @@ fn auto_migrate_fts(pool: &DbPool) -> Result<(), String> {
                             verse.get("reference").and_then(|r| r.as_str()),
                             verse.get("text").and_then(|t| t.as_str()),
                         ) {
-                            insert_stmt
-                                .execute((version_id, reference, text))
-                                .map_err(|e| e.to_string())?;
+                            if let Some(tx) = &current_tx {
+                                let _ = tx.execute(
+                                    "INSERT INTO bible_fts (version, reference, text) VALUES (?1, ?2, ?3)",
+                                    libsql::params![version_id, reference, text]
+                                ).await;
+                            }
+
+                            count += 1;
+                            if count % chunk_size == 0 {
+                                if let Some(tx) = current_tx {
+                                    let _ = tx.commit().await;
+                                }
+                                current_tx = conn.transaction().await.ok();
+                                println!(
+                                    "[WorshipCuePro] FTS Backfill progress: {} verses indexed...",
+                                    count
+                                );
+                            }
                         }
                     }
                 }
 
-                drop(insert_stmt);
-                drop(stmt);
-                tx.commit().map_err(|e| e.to_string())?;
+                if let Some(tx) = current_tx {
+                    let _ = tx.commit().await;
+                    println!(
+                        "[WorshipCuePro] FTS Backfill for {} completed! ({} total verses).",
+                        version_id, count
+                    );
+                }
             }
         }
     }

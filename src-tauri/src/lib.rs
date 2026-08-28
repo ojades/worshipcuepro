@@ -67,13 +67,16 @@ pub fn run() {
             .on_window_event(|window, event| match event {
                 tauri::WindowEvent::CloseRequested { .. } => {
                     if window.label() == "main" {
-                        if let Some(pool) = window.try_state::<crate::db::DbPool>() {
-                            if let Ok(conn) = pool.get() {
-                                let _ = conn.execute_batch("
+                        if let Some(state) = window.try_state::<crate::db::DbState>() {
+                            let state_clone = state.inner().clone();
+
+                            tauri::async_runtime::block_on(async move {
+                                let db_lock = state_clone.lock().await;
+                                let _ = db_lock.conn.execute_batch("
                                     PRAGMA wal_checkpoint(TRUNCATE);
                                     PRAGMA journal_mode = DELETE;
-                                ");
-                            }
+                                ").await;
+                            });
                         }
 
                         commands::db::settings::release_lock_on_exit(window.app_handle());
@@ -86,13 +89,13 @@ pub fn run() {
             .manage(ApiHttpClient(http_client))
             .plugin(tauri_plugin_fs::init())
             .plugin(tauri_plugin_dialog::init())
-            .plugin(tauri_plugin_sql::Builder::default().build())
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_shell::init())
             .setup(|app| {
-                match db::init_db(&app.handle()) {
-                    Ok(db_pool) => {
-                        app.manage(db_pool);
+                let app_handle = app.handle();
+                match tauri::async_runtime::block_on(db::init_db(&app_handle)) {
+                    Ok(db_state) => {
+                        app.manage(db_state);
                     }
                     Err(e) => {
                         use tauri_plugin_dialog::DialogExt;
@@ -173,6 +176,7 @@ pub fn run() {
             commands::db::settings::get_core_workspace,
             commands::db::settings::check_and_acquire_lock,
             commands::db::settings::force_release_lock,
+            commands::db::settings::is_db_offline,
             commands::db::shoot::fetch_shoot_slides,
             commands::db::shoot::fetch_all_shoots,
             commands::db::shoot::save_shoot,

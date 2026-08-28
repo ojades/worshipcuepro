@@ -1,5 +1,6 @@
 // /src-tauri/src/commands/db/playlist.rs
-use crate::db::DbPool;
+use crate::db::DbState;
+use libsql::params;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -32,11 +33,12 @@ pub struct SortOrderItem {
 }
 
 #[tauri::command]
-pub fn fetch_all_playlists(pool: State<'_, DbPool>) -> Result<Vec<PlaylistMeta>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+pub async fn fetch_all_playlists(state: State<'_, DbState>) -> Result<Vec<PlaylistMeta>, String> {
+    let db_lock = state.lock().await;
 
-    let mut stmt = conn
-        .prepare(
+    let mut rows = db_lock
+        .conn
+        .query(
             "SELECT
                 p.id,
                 p.name,
@@ -46,77 +48,102 @@ pub fn fetch_all_playlists(pool: State<'_, DbPool>) -> Result<Vec<PlaylistMeta>,
              LEFT JOIN playlist_items pi ON p.id = pi.playlist_id
              GROUP BY p.id
              ORDER BY p.created_at DESC",
+            (),
         )
-        .map_err(|e| e.to_string())?;
-
-    let iter = stmt
-        .query_map([], |row| {
-            Ok(PlaylistMeta {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                created_at: row.get(2)?,
-                cue_count: row.get(3)?,
-            })
-        })
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut playlists = Vec::new();
-    for item in iter {
-        playlists.push(item.map_err(|e| e.to_string())?);
+
+    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+        playlists.push(PlaylistMeta {
+            id: row.get(0).unwrap_or_default(),
+            name: row.get(1).unwrap_or_default(),
+            created_at: row.get(2).ok(),
+            cue_count: row.get(3).unwrap_or(0),
+        });
     }
+
     Ok(playlists)
 }
 
 #[tauri::command]
-pub fn create_playlist(pool: State<'_, DbPool>, id: String, title: String) -> Result<(), String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO playlists (id, name) VALUES (?1, ?2)",
-        [&id, &title],
-    )
-    .map_err(|e| e.to_string())?;
+pub async fn create_playlist(
+    state: State<'_, DbState>,
+    id: String,
+    title: String,
+) -> Result<(), String> {
+    let db_lock = state.lock().await;
+
+    db_lock
+        .conn
+        .execute(
+            "INSERT INTO playlists (id, name) VALUES (?1, ?2)",
+            params![id, title],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn update_playlist(
-    pool: State<'_, DbPool>,
+pub async fn update_playlist(
+    state: State<'_, DbState>,
     id: String,
     new_title: String,
 ) -> Result<(), String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
-    conn.execute(
-        "UPDATE playlists SET name = ?1 WHERE id = ?2",
-        [&new_title, &id],
+    let db_lock = state.lock().await;
+
+    db_lock
+        .conn
+        .execute(
+            "UPDATE playlists SET name = ?1 WHERE id = ?2",
+            params![new_title, id],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_playlist(state: State<'_, DbState>, id: String) -> Result<(), String> {
+    let db_lock = state.lock().await;
+
+    // Transaction ensures both items and playlist are deleted together
+    let tx = db_lock
+        .conn
+        .transaction()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "DELETE FROM playlist_items WHERE playlist_id = ?1",
+        params![id.clone()],
     )
+    .await
     .map_err(|e| e.to_string())?;
+
+    tx.execute("DELETE FROM playlists WHERE id = ?1", params![id])
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_playlist(pool: State<'_, DbPool>, id: String) -> Result<(), String> {
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
-    // Transaction ensures both items and playlist are deleted together or neither are
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
-        tx.execute("DELETE FROM playlist_items WHERE playlist_id = ?1", [&id])
-            .map_err(|e| e.to_string())?;
-        tx.execute("DELETE FROM playlists WHERE id = ?1", [&id])
-            .map_err(|e| e.to_string())?;
-    }
-    tx.commit().map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn fetch_playlist_cues(
-    pool: State<'_, DbPool>,
+pub async fn fetch_playlist_cues(
+    state: State<'_, DbState>,
     playlist_id: String,
 ) -> Result<Vec<PlaylistCueRow>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+    let db_lock = state.lock().await;
 
-    let mut stmt = conn
-        .prepare(
+    let mut rows = db_lock
+        .conn
+        .query(
             "SELECT
                 pi.id as playlist_item_id,
                 pi.sort_order,
@@ -132,124 +159,138 @@ pub fn fetch_playlist_cues(
              LEFT JOIN shoots sh ON pi.item_id = sh.id AND pi.item_type = 'shoot'
              WHERE pi.playlist_id = ?1
              ORDER BY pi.sort_order ASC",
+            params![playlist_id],
         )
-        .map_err(|e| e.to_string())?;
-
-    let iter = stmt
-        .query_map([&playlist_id], |row| {
-            Ok(PlaylistCueRow {
-                playlist_item_id: row.get(0)?,
-                sort_order: row.get(1)?,
-                id: row.get(2)?,
-                item_type: row.get(3)?,
-                title: row.get(4)?,
-                raw_lyrics: row.get(5)?,
-                filepath: row.get(6)?,
-                media_type: row.get(7)?,
-            })
-        })
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut cues = Vec::new();
-    for item in iter {
-        cues.push(item.map_err(|e| e.to_string())?);
+
+    while let Ok(Some(row)) = rows.next().await {
+        cues.push(PlaylistCueRow {
+            playlist_item_id: row.get(0).unwrap_or_default(),
+            sort_order: row.get(1).unwrap_or(0),
+            id: row.get(2).unwrap_or_default(),
+            item_type: row.get(3).unwrap_or_default(),
+            title: row.get(4).ok(),
+            raw_lyrics: row.get(5).ok(),
+            filepath: row.get(6).ok(),
+            media_type: row.get(7).ok(),
+        });
     }
+
     Ok(cues)
 }
 
 #[tauri::command]
-pub fn fetch_playlist_meta(
-    pool: State<'_, DbPool>,
+pub async fn fetch_playlist_meta(
+    state: State<'_, DbState>,
     playlist_id: String,
 ) -> Result<Option<PlaylistMeta>, String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
-    let mut stmt = conn
-        .prepare("SELECT id, name, created_at FROM playlists WHERE id = ?1")
+    let db_lock = state.lock().await;
+
+    let mut rows = db_lock
+        .conn
+        .query(
+            "SELECT id, name, created_at FROM playlists WHERE id = ?1",
+            params![playlist_id],
+        )
+        .await
         .map_err(|e| e.to_string())?;
 
-    let mut iter = stmt
-        .query_map([&playlist_id], |row| {
-            Ok(PlaylistMeta {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                created_at: row.get(2)?,
-                cue_count: 0, // Not needed for single fetch
-            })
-        })
-        .map_err(|e| e.to_string())?;
-
-    if let Some(result) = iter.next() {
-        return Ok(Some(result.map_err(|e| e.to_string())?));
+    if let Ok(Some(row)) = rows.next().await {
+        return Ok(Some(PlaylistMeta {
+            id: row.get(0).unwrap_or_default(),
+            name: row.get(1).unwrap_or_default(),
+            created_at: row.get(2).ok(),
+            cue_count: 0, // Not needed for single fetch
+        }));
     }
+
     Ok(None)
 }
 
 #[tauri::command]
-pub fn add_cue_to_playlist(
-    pool: State<'_, DbPool>,
+pub async fn add_cue_to_playlist(
+    state: State<'_, DbState>,
     playlist_id: String,
     item_id: String,
     item_type: String,
     playlist_item_id: String,
 ) -> Result<(), String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
+    let db_lock = state.lock().await;
 
     // Fetch current count to determine sort_order
-    let count: i32 = conn
-        .query_row(
+    let mut count_rows = db_lock
+        .conn
+        .query(
             "SELECT COUNT(id) FROM playlist_items WHERE playlist_id = ?1",
-            [&playlist_id],
-            |row| row.get(0),
+            params![playlist_id.clone()],
         )
+        .await
         .map_err(|e| e.to_string())?;
 
-    conn.execute(
-        "INSERT INTO playlist_items (id, playlist_id, item_id, item_type, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)",
-        (
-            &playlist_item_id,
-            &playlist_id,
-            &item_id,
-            &item_type,
-            &count,
-        ),
-    )
-    .map_err(|e| e.to_string())?;
+    let count: i32 = if let Ok(Some(row)) = count_rows.next().await {
+        row.get(0).unwrap_or(0)
+    } else {
+        0
+    };
+
+    db_lock
+        .conn
+        .execute(
+            "INSERT INTO playlist_items (id, playlist_id, item_id, item_type, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![playlist_item_id, playlist_id, item_id, item_type, count],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn update_playlist_sort_order(
-    pool: State<'_, DbPool>,
+pub async fn update_playlist_sort_order(
+    state: State<'_, DbState>,
     updates: Vec<SortOrderItem>,
 ) -> Result<(), String> {
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
-    // Batch process the updates incredibly fast
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
-        let mut stmt = tx
-            .prepare("UPDATE playlist_items SET sort_order = ?1 WHERE id = ?2")
-            .map_err(|e| e.to_string())?;
+    let db_lock = state.lock().await;
 
-        for update in updates {
-            stmt.execute([&update.sort_order.to_string(), &update.playlist_item_id])
-                .map_err(|e| e.to_string())?;
-        }
+    // Batch process the updates using a transaction
+    let tx = db_lock
+        .conn
+        .transaction()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for update in updates {
+        tx.execute(
+            "UPDATE playlist_items SET sort_order = ?1 WHERE id = ?2",
+            params![update.sort_order, update.playlist_item_id],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     }
-    tx.commit().map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn remove_cue_from_playlist(
-    pool: State<'_, DbPool>,
+pub async fn remove_cue_from_playlist(
+    state: State<'_, DbState>,
     playlist_item_id: String,
 ) -> Result<(), String> {
-    let conn = pool.get().map_err(|e| e.to_string())?;
-    conn.execute(
-        "DELETE FROM playlist_items WHERE id = ?1",
-        [&playlist_item_id],
-    )
-    .map_err(|e| e.to_string())?;
+    let db_lock = state.lock().await;
+
+    db_lock
+        .conn
+        .execute(
+            "DELETE FROM playlist_items WHERE id = ?1",
+            params![playlist_item_id],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }

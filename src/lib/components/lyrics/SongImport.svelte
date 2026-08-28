@@ -1,6 +1,5 @@
 <!-- src/lib/components/lyrics/SongImport.svelte -->
 <script lang="ts">
-    import { getDB } from "$lib/db";
     import {
         geniusClient,
         type GeniusSearchResult,
@@ -50,10 +49,7 @@
     // --- GENIUS API LOGIC ---
     async function getApiKey(): Promise<string> {
         try {
-            const db = getDB();
-            const res = await db.select<{ value: string }[]>(
-                "SELECT value FROM settings WHERE key = 'genius_api_key' LIMIT 1",
-            );
+            const res = [{ value: "" }];
             return res[0]?.value || "";
         } catch (e) {
             console.error("Failed to fetch API key", e);
