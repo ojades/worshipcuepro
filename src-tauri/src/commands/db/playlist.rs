@@ -212,7 +212,7 @@ pub async fn fetch_playlist_meta(
 
 #[tauri::command]
 pub async fn add_cue_to_playlist(
-    state: State<'_, DbState>,
+    state: tauri::State<'_, DbState>,
     playlist_id: String,
     item_id: String,
     item_type: String,
@@ -220,27 +220,30 @@ pub async fn add_cue_to_playlist(
 ) -> Result<(), String> {
     let db_lock = state.lock().await;
 
-    // Fetch current count to determine sort_order
-    let mut count_rows = db_lock
-        .conn
-        .query(
-            "SELECT COUNT(id) FROM playlist_items WHERE playlist_id = ?1",
-            params![playlist_id.clone()],
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+    // Scope block: fetch the count and immediately drop the read cursor
+    let count: i32 = {
+        let mut count_rows = db_lock
+            .conn
+            .query(
+                "SELECT COUNT(id) FROM playlist_items WHERE playlist_id = ?1",
+                libsql::params![playlist_id.clone()],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
 
-    let count: i32 = if let Ok(Some(row)) = count_rows.next().await {
-        row.get(0).unwrap_or(0)
-    } else {
-        0
+        // Safely extract the count, ignoring transient read errors
+        if let Some(row) = count_rows.next().await.unwrap_or(None) {
+            row.get(0).unwrap_or(0)
+        } else {
+            0
+        }
     };
 
     db_lock
         .conn
         .execute(
             "INSERT INTO playlist_items (id, playlist_id, item_id, item_type, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![playlist_item_id, playlist_id, item_id, item_type, count],
+            libsql::params![playlist_item_id, playlist_id, item_id, item_type, count],
         )
         .await
         .map_err(|e| e.to_string())?;

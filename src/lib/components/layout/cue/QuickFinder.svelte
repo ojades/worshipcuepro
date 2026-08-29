@@ -6,7 +6,6 @@
         BookOpen,
         Image as ImageIcon,
         Play,
-        Command,
     } from "@lucide/svelte";
     import { onMount, onDestroy } from "svelte";
     import { songsState } from "$lib/state/songs.svelte";
@@ -14,10 +13,10 @@
     import { presentation } from "$lib/state/presentation.svelte";
     import { media } from "$lib/state/media.svelte";
     import { goto } from "$app/navigation";
-    import { playlists } from "$lib/state/playlists.svelte";
     import { convertFileSrc } from "@tauri-apps/api/core";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
     import { settingsState } from "$lib/state/settings.svelte";
+    import { parseLyrics } from "$lib/utils/lyrics";
     import type { FtsSearchResult } from "$lib/commands/bible-db";
     import type { SongSearchResult } from "$lib/commands/song-db";
 
@@ -264,9 +263,27 @@
 
     async function fireResult(result: any) {
         if (result.type === "song") {
-            await playlists.addCueToActive(result.payload.id, "song");
-            const newCue = presentation.activePlaylist?.cues.at(-1);
-            if (newCue) presentation.fire(newCue);
+            // FIX: Retrieve the full song and generate a cue on the fly, skipping the playlist
+            const fullSong = songsState.songs.find(
+                (s) => s.id === result.payload.id,
+            );
+            if (fullSong) {
+                const cue = {
+                    id: fullSong.id,
+                    type: "song",
+                    title: fullSong.title,
+                    sections: parseLyrics(
+                        fullSong.raw_lyrics || "",
+                        fullSong.lines_per_slide || 0,
+                    ),
+                };
+                presentation.fire(
+                    cue,
+                    `song_${fullSong.id}`,
+                    `slide_${fullSong.id}_0`,
+                );
+                goto("/operator"); // Switch to operator view so they can see the fired cue
+            }
         } else if (result.type === "version_switch") {
             bibleState.switchBibleVersionLive(result.payload.id);
         } else if (result.type === "bible_nav") {
@@ -280,7 +297,6 @@
                         v.reference.endsWith(`:${verseNum}`),
                     );
                     if (targetVerse) {
-                        // FIX: Explicitly pre-fetch the text before generating cue
                         await bibleState.resolveVerseText(targetVerse.id);
 
                         const cue = await bibleState.generateChapterCue(
@@ -332,7 +348,6 @@
                             v.reference.endsWith(`:${verseNum}`),
                         );
                         if (targetVerse) {
-                            // FIX: Explicitly pre-fetch the text before generating cue
                             await bibleState.resolveVerseText(targetVerse.id);
 
                             const cue = await bibleState.generateChapterCue(
@@ -361,7 +376,6 @@
     }
 </script>
 
-<!-- KEEP THE REST OF THE UI EXACTLY THE SAME -->
 <div
     class="flex flex-col h-full bg-card/30 rounded-xl border border-border shadow-inner overflow-hidden"
 >
