@@ -7,16 +7,16 @@
         Pause,
         Trash2,
         Video,
-        CheckSquare,
-        XSquare,
         FolderInput,
-        Loader2,
         Volume2,
         VolumeX,
         FastForward,
         X,
         Link2,
         ListPlus,
+        LoaderCircle,
+        SquareX,
+        SquareCheckBig,
     } from "@lucide/svelte";
     import { media, type Media } from "$lib/state/media.svelte";
     import { onMount } from "svelte";
@@ -301,15 +301,44 @@
         </div>
     {/if}
 
-    <!-- EXISTING IMPORT OVERLAY -->
-    {#if media.isImporting}
+    {#if media.importProgress}
         <div
-            class="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white"
+            class="absolute bottom-24 right-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-2xl z-50 flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-300 pointer-events-none"
         >
-            <Loader2 class="animate-spin text-neon-violet mb-4" size={48} />
-            <p class="font-bold text-lg tracking-widest uppercase">
-                Importing Media...
-            </p>
+            <div class="bg-violet-500/20 p-2 rounded-lg shrink-0">
+                <LoaderCircle class="animate-spin text-violet-400" size={24} />
+            </div>
+
+            <div class="flex flex-col min-w-[220px]">
+                <div class="flex justify-between items-end mb-1">
+                    <p class="text-sm font-bold text-white tracking-wide">
+                        Importing Media
+                    </p>
+                    <p
+                        class="text-xs font-mono font-bold text-zinc-500 bg-zinc-950 px-1.5 py-0.5 rounded"
+                    >
+                        {media.importProgress.current} / {media.importProgress
+                            .total}
+                    </p>
+                </div>
+
+                <p
+                    class="text-[11px] text-zinc-400 truncate w-48 mb-2 font-medium"
+                >
+                    {media.importProgress.filename}
+                </p>
+
+                <div
+                    class="w-full h-1.5 bg-zinc-950 rounded-full overflow-hidden shadow-inner"
+                >
+                    <div
+                        class="h-full bg-violet-500 transition-all duration-300 ease-out"
+                        style="width: {(media.importProgress.current /
+                            media.importProgress.total) *
+                            100}%"
+                    ></div>
+                </div>
+            </div>
         </div>
     {/if}
 
@@ -318,7 +347,7 @@
         <div
             class="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white"
         >
-            <Loader2 class="animate-spin text-red-500 mb-4" size={48} />
+            <LoaderCircle class="animate-spin text-red-500 mb-4" size={48} />
             <p class="font-bold text-lg tracking-widest uppercase text-white">
                 Downloading Video...
             </p>
@@ -436,7 +465,7 @@
                             }}
                             class="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg text-sm transition-colors"
                         >
-                            <XSquare size={16} /> Cancel
+                            <SquareX size={16} /> Cancel
                         </button>
                     </div>
                 </div>
@@ -476,7 +505,7 @@
                             class="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
                             title="Select Multiple"
                         >
-                            <CheckSquare size={16} /> Select
+                            <SquareCheckBig size={16} /> Select
                         </button>
                         <div class="relative">
                             <Search

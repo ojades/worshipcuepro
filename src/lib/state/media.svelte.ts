@@ -54,6 +54,11 @@ class MediaState {
 
   savedCategories = $state<string[]>([]);
   isDownloadingYoutube = $state(false);
+  importProgress = $state<{
+    current: number;
+    total: number;
+    filename: string;
+  } | null>(null);
 
   categories = $derived.by(() => {
     const usedCategories = this.allMedia.map((m) => m.category).filter(Boolean);
@@ -365,24 +370,24 @@ class MediaState {
     const files = Array.isArray(selected) ? selected : [selected];
     if (files.length === 0) return;
 
-    this.isImporting = true;
     const workspace = settingsState.workspacePath;
-    let mediaDirPath = "";
+    if (!workspace) return;
 
-    if (workspace) {
-      mediaDirPath = await join(workspace, "media");
-      if (!(await exists(mediaDirPath))) {
-        await mkdir(mediaDirPath, { recursive: true });
-      }
+    const mediaDirPath = await join(workspace, "media");
+    if (!(await exists(mediaDirPath))) {
+      await mkdir(mediaDirPath, { recursive: true });
     }
 
-    const fileCopyJobs: [string, string][] = [];
-    const mediaToInsert: MediaInsert[] = [];
-    let skippedCount = 0;
+    // Initialize the non-blocking progress widget
+    this.importProgress = {
+      current: 0,
+      total: files.length,
+      filename: "Preparing files...",
+    };
 
-    const existingFilenames = new Set(
-      this.allMedia.map((m) => m.filename.toLowerCase()),
-    );
+    let importedCount = 0;
+    let repairedCount = 0;
+    let skippedCount = 0;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -394,65 +399,78 @@ class MediaState {
         ? "video"
         : "image";
 
-      if (existingFilenames.has(name.toLowerCase())) {
+      // Update widget UI
+      this.importProgress = {
+        current: i + 1,
+        total: files.length,
+        filename: fullFileName,
+      };
+
+      const finalFilePath = await join(mediaDirPath, fullFileName);
+
+      //Does the file exist physically? Does it exist in the DB?
+      const physicalExists = await exists(finalFilePath);
+      const existingDbItem = this.allMedia.find(
+        (m) => m.filename.toLowerCase() === name.toLowerCase(),
+      );
+
+      // Both exist
+      if (physicalExists && existingDbItem) {
         skippedCount++;
         continue;
       }
 
-      let dbFilePath = filePath;
-
-      if (workspace) {
-        const finalFilePath = await join(mediaDirPath, fullFileName);
-
+      // Physical file is missing. Copy it.
+      if (!physicalExists) {
         const isAlreadyInWorkspace =
           filePath.replace(/\\/g, "/").toLowerCase() ===
           finalFilePath.replace(/\\/g, "/").toLowerCase();
-
-        if (isAlreadyInWorkspace) {
-          dbFilePath = fullFileName;
-        } else if (await exists(finalFilePath)) {
-          dbFilePath = fullFileName;
-        } else {
-          fileCopyJobs.push([filePath, finalFilePath]);
-          dbFilePath = fullFileName;
+        if (!isAlreadyInWorkspace) {
+          try {
+            await invoke("bulk_copy_media", {
+              files: [[filePath, finalFilePath]],
+            });
+          } catch (err) {
+            console.error("Failed to copy file:", err);
+            continue; // Abort this file if the OS copy fails
+          }
         }
       }
 
-      mediaToInsert.push({
-        id: crypto.randomUUID(),
-        filename: name,
-        filepath: dbFilePath,
-        type: mediaType,
-        category: targetCategory,
-      });
+      // DB row is missing. Insert it.
+      if (!existingDbItem) {
+        await bulkInsertMediaAPI([
+          {
+            id: crypto.randomUUID(),
+            filename: name,
+            filepath: fullFileName,
+            type: mediaType,
+            category: targetCategory,
+          },
+        ]);
+        importedCount++;
+      } else {
+        repairedCount++;
+      }
 
-      existingFilenames.add(name.toLowerCase());
-    }
-
-    if (fileCopyJobs.length > 0) {
-      try {
-        await invoke("bulk_copy_media", { files: fileCopyJobs });
-      } catch (err) {
-        console.error("Bulk copy failed:", err);
+      //Refresh the gallery every 5 files so the operator sees them popping in!
+      if (i % 5 === 0) {
+        await this.loadAll();
       }
     }
 
-    if (mediaToInsert.length > 0) {
-      await bulkInsertMediaAPI(mediaToInsert);
-    }
-
+    // Final cleanup
     await this.loadAll();
-    this.isImporting = false;
+    this.importProgress = null;
 
-    const importCount = mediaToInsert.length;
-    if (importCount > 0) {
+    if (importedCount > 0 || repairedCount > 0) {
       systemState.addAlert({
-        message: `Imported ${importCount} file(s). ${skippedCount > 0 ? `Skipped ${skippedCount} duplicate(s).` : ""}`,
+        message: `Imported ${importedCount} file(s). Repaired ${repairedCount}. Skipped ${skippedCount} exact duplicates.`,
         type: "success",
       });
     } else if (skippedCount > 0) {
       systemState.addAlert({
-        message: `Skipped ${skippedCount} file(s) that were already in the library.`,
+        message: `Skipped ${skippedCount} file(s) that were already fully synced.`,
         type: "info",
       });
     }

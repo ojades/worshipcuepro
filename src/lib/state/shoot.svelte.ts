@@ -94,6 +94,8 @@ export class ShootState {
     try {
       await deleteShootAPI(id);
       await this.loadAll();
+      await media.loadAll();
+
       systemState.addAlert({
         message: "Shoot deleted successfully.",
         type: "success",

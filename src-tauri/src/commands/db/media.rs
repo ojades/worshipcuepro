@@ -40,7 +40,7 @@ pub async fn fetch_all_media(state: State<'_, DbState>) -> Result<Vec<MediaRow>,
     let mut rows = db_lock
         .conn
         .query(
-            "SELECT id, filename, filepath, type, category, thumbnail_path, created_at FROM media ORDER BY created_at DESC",
+            "SELECT id, filename, filepath, type, category, thumbnail_path, created_at FROM media WHERE category <> 'Presentation' ORDER BY created_at DESC",
             (),
         )
         .await

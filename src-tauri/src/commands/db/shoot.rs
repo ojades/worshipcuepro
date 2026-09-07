@@ -1,3 +1,5 @@
+use std::path::Path;
+
 // /src-tauri/src/commands/db/shoot.rs
 use crate::db::DbState;
 use libsql::params;
@@ -10,6 +12,7 @@ pub struct ShootMeta {
     pub title: String,
     #[serde(rename = "slideCount")]
     pub slide_count: i32,
+    pub thumbnail_path: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,20 +38,27 @@ pub struct FullShoot {
 }
 
 #[tauri::command]
-pub async fn fetch_all_shoots(state: State<'_, DbState>) -> Result<Vec<ShootMeta>, String> {
+pub async fn fetch_all_shoots(
+    state: tauri::State<'_, crate::db::DbState>,
+) -> Result<Vec<ShootMeta>, String> {
     let db_lock = state.lock().await;
 
+    // Use a subquery to grab the filepath of the first associated media item
     let mut rows = db_lock
         .conn
         .query(
             "SELECT
-                sh.id,
-                sh.title,
-                CAST(COUNT(ss.id) AS INTEGER) as slideCount
-             FROM shoots sh
-             LEFT JOIN shoot_slides ss ON sh.id = ss.shoot_id
-             GROUP BY sh.id
-             ORDER BY sh.created_at DESC",
+                s.id,
+                s.title,
+                (SELECT COUNT(*) FROM shoot_slides WHERE shoot_id = s.id) as slide_count,
+                (SELECT m.filepath
+                 FROM shoot_slides ss
+                 JOIN media m ON ss.media_id = m.id
+                 WHERE ss.shoot_id = s.id AND m.filepath IS NOT NULL
+                 ORDER BY ss.sort_order ASC
+                 LIMIT 1) as thumbnail_path
+             FROM shoots s
+             ORDER BY s.created_at DESC",
             (),
         )
         .await
@@ -60,6 +70,7 @@ pub async fn fetch_all_shoots(state: State<'_, DbState>) -> Result<Vec<ShootMeta
             id: row.get(0).unwrap_or_default(),
             title: row.get(1).unwrap_or_default(),
             slide_count: row.get(2).unwrap_or(0),
+            thumbnail_path: row.get(3).unwrap_or(None),
         });
     }
 
@@ -182,6 +193,53 @@ pub async fn delete_shoot(state: State<'_, DbState>, id: String) -> Result<(), S
         .await
         .map_err(|e| e.to_string())?;
 
+    // 1. Find all media associated with this shoot that are specifically "Presentations"
+    let mut rows = tx
+        .query(
+            "SELECT m.id, m.filepath FROM media m
+         JOIN shoot_slides ss ON m.id = ss.media_id
+         WHERE ss.shoot_id = ?1 AND m.category = 'Presentation'",
+            params![id.clone()],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut media_ids = Vec::new();
+    let mut filepaths = Vec::new();
+
+    while let Ok(Some(row)) = rows.next().await {
+        if let (Ok(m_id), Ok(f_path)) = (row.get::<String>(0), row.get::<String>(1)) {
+            media_ids.push(m_id);
+            filepaths.push(f_path);
+        }
+    }
+
+    // 2. Delete the physical files from the drive
+    let mut parent_dir_to_clean = None;
+    for path_str in filepaths {
+        let path = Path::new(&path_str);
+        // Grab the directory path (e.g., presentations/Health Talk)
+        if parent_dir_to_clean.is_none() {
+            parent_dir_to_clean = path.parent().map(|p| p.to_path_buf());
+        }
+        // Delete the slide image
+        let _ = std::fs::remove_file(path);
+    }
+
+    // 3. Try to clean up the presentation folder
+    if let Some(dir) = parent_dir_to_clean {
+        // remove_dir is safe: it automatically FAILS and does nothing if the folder is not empty
+        let _ = std::fs::remove_dir(dir);
+    }
+
+    // 4. Delete the media records from the DB
+    for m_id in media_ids {
+        let _ = tx
+            .execute("DELETE FROM media WHERE id = ?1", params![m_id])
+            .await;
+    }
+
+    // 5. Delete the shoot slides & shoot records
     tx.execute(
         "DELETE FROM shoot_slides WHERE shoot_id = ?1",
         params![id.clone()],

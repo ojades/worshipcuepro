@@ -5,6 +5,7 @@ export interface ShootMeta {
   id: string;
   title: string;
   slideCount: number;
+  thumbnail_path?: string | null;
 }
 
 export interface ShootSlideRow {

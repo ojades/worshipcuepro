@@ -334,7 +334,9 @@
                         >
                             <span
                                 class="text-zinc-400 text-[8cqh] font-bold uppercase tracking-widest mb-[2cqh]"
-                                >Time Left</span
+                                >{isSpeakerOverrun
+                                    ? `Over Time`
+                                    : `Time Left`}</span
                             >
                             <span
                                 class="text-[60cqh] font-black tabular-nums leading-none drop-shadow-2xl transition-colors duration-500 {speakerTimerColorClass}"

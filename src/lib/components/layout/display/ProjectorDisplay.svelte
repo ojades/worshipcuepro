@@ -244,7 +244,7 @@
     {/if}
 
     <!-- 4. Timers Layer -->
-    {#if (display.showServiceTimerOnProjector || display.showSpeakerTimerOnProjector) && (display.serviceTargetTimestamp || display.speakerTargetTimestamp)}
+    {#if (display.showServiceTimerOnProjector || display.showSpeakerTimerOnProjector) && (display.serviceTargetTimestamp || display.speakerTargetTimestamp) && !display.liveText}
         <div
             class="absolute inset-0 z-40 flex flex-col gap-[4cqh] items-center justify-center bg-black/60 backdrop-blur-xs animate-in fade-in duration-500"
         >
