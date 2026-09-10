@@ -7,11 +7,9 @@
     import { getCoreWorkspaceAPI } from "$lib/commands/settings-db";
     import { settingsState } from "$lib/state/settings.svelte";
 
-    // --- State ---
     let presentationPayload = $state<PresentationPayload | null>(null);
     let controlsPayload = $state<any>({});
 
-    // Combine into a single reactive display object
     let displayPayload: PresentationPayload = $derived({
         ...presentationPayload,
         ...controlsPayload,
@@ -21,16 +19,52 @@
     let unlistenControls: () => void;
     let socket: WebSocket | null = null;
 
-    // Helper to check if running inside Tauri webview
     const isTauri = () =>
         typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+    // Convert relative network time to absolute local time
+    function processControlsPayload(raw: any) {
+        const now = Date.now();
+        const payload = { ...raw }; // FIXED: Clone object to force Svelte Reactivity
+
+        if (
+            payload.serviceRemainingMs !== null &&
+            payload.serviceRemainingMs !== undefined
+        ) {
+            payload.localServiceTargetTimestamp =
+                now + payload.serviceRemainingMs;
+        } else {
+            payload.localServiceTargetTimestamp = null;
+        }
+
+        if (
+            payload.isSpeakerRunning &&
+            payload.speakerRemainingMs !== null &&
+            payload.speakerRemainingMs !== undefined
+        ) {
+            payload.localSpeakerTargetTimestamp =
+                now + payload.speakerRemainingMs;
+            payload.speakerPausedRemainingMs = null;
+        } else if (
+            !payload.isSpeakerRunning &&
+            payload.speakerRemainingMs !== null &&
+            payload.speakerRemainingMs !== undefined
+        ) {
+            payload.localSpeakerTargetTimestamp = null;
+            payload.speakerPausedRemainingMs = payload.speakerRemainingMs;
+        } else {
+            payload.localSpeakerTargetTimestamp = null;
+            payload.speakerPausedRemainingMs = null;
+        }
+
+        return payload;
+    }
 
     onMount(async () => {
         if (isTauri()) {
             const coreWorkspace = await getCoreWorkspaceAPI();
             if (coreWorkspace) {
                 settingsState.workspacePath = coreWorkspace;
-
                 await fontState.loadFonts();
             }
             const { listen, emit } = await import("@tauri-apps/api/event");
@@ -43,19 +77,17 @@
             );
 
             unlistenControls = await listen("controls-update", (event: any) => {
-                controlsPayload = event.payload;
+                controlsPayload = processControlsPayload(event.payload);
             });
 
             await emit("request-presentation-state");
             await emit("request-controls-state");
         } else {
-            // --- REMOTE WEB BROWSER MODE ---
             connectWebSocket();
         }
     });
 
     function connectWebSocket() {
-        // Automatically connects to ws://<current-host-ip>:8080/ws
         const wsProtocol =
             window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
@@ -65,11 +97,8 @@
         socket.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-
-                // Expecting incoming WebSocket payloads to specify an event type
                 if (data.type === "presentation-update") {
                     let payload = data.payload;
-
                     if (
                         !isTauri() &&
                         payload.liveBackground?.url?.includes(
@@ -86,9 +115,8 @@
                     }
                     presentationPayload = payload;
                 } else if (data.type === "controls-update") {
-                    controlsPayload = data.payload;
+                    controlsPayload = processControlsPayload(data.payload);
                 } else if (data.text) {
-                    // Fallback support if receiving simple CueData from OBS broadcasts
                     presentationPayload = data;
                 }
             } catch (err) {
@@ -99,7 +127,6 @@
         socket.onclose = () => {
             presentationPayload = null;
             controlsPayload = {};
-            // Reconnect automatically if Wi-Fi drops temporarily
             setTimeout(connectWebSocket, 3000);
         };
     }

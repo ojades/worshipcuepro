@@ -12,12 +12,12 @@ use futures_util::{sink::SinkExt, stream::StreamExt};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs; // NEW: For reading config
+use std::fs;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir; // NEW: For serving physical files // NEW: To access AppHandle paths
+use tower_http::services::ServeDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CueData {
@@ -33,7 +33,7 @@ pub struct AppState {
     pub cache: Arc<RwLock<HashMap<String, String>>>,
 }
 
-// NEW: Struct to read your custom workspace path
+// Struct to read your custom workspace path
 #[derive(Serialize, Deserialize, Default)]
 struct CoreConfig {
     workspace_path: Option<String>,
@@ -47,11 +47,11 @@ struct Assets;
 pub async fn start_server(
     tx: broadcast::Sender<String>,
     cache: Arc<RwLock<HashMap<String, String>>>,
-    app_handle: tauri::AppHandle, // NEW: Required to find the media folder
+    app_handle: tauri::AppHandle,
 ) {
     let app_state = Arc::new(AppState { tx, cache });
 
-    // --- NEW: Find the workspace media directory ---
+    // ---Find the workspace media directory ---
     let app_dir = app_handle.path().app_data_dir().unwrap();
     let config_path = app_dir.join("wcp_core.json");
     let config: CoreConfig = fs::read_to_string(&config_path)
@@ -63,11 +63,11 @@ pub async fn start_server(
         .workspace_path
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| app_dir.clone())
-        .join("media"); // Target the media subfolder
+        .join("media");
 
-    // --- NEW: Attach the media directory to the /media route ---
+    // --- Attach the media directory to the /media route ---
     let app = Router::new()
-        .nest_service("/media", ServeDir::new(media_dir)) // Remote displays can now fetch from here!
+        .nest_service("/media", ServeDir::new(media_dir))
         .route("/ws", get(ws_handler))
         .fallback(get(static_handler))
         .layer(CorsLayer::permissive())

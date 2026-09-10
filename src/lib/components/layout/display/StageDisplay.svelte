@@ -11,11 +11,12 @@
         stageMessage?: string;
         showMessageOnStage?: boolean;
 
-        serviceTargetTimestamp?: number | null;
+        localServiceTargetTimestamp?: number | null;
         showServiceTimerOnStage?: boolean;
 
-        speakerTargetTimestamp?: number | null;
+        localSpeakerTargetTimestamp?: number | null;
         speakerPausedRemainingMs?: number | null;
+        isSpeakerRunning?: boolean;
         speakerTotalDurationMs?: number | null;
         showSpeakerTimerOnStage?: boolean;
     };
@@ -44,7 +45,6 @@
             --ref-font-scale: ${(display.stage?.textScale ?? 1) * (display.stage?.textFormat?.referenceFontSizeScale ?? 1)};
         `);
 
-    // Dynamic horizontal alignment mapping
     let horizontalAlignmentClass = $derived.by(() => {
         switch (display.stage?.textFormat?.textAlign) {
             case "left":
@@ -70,8 +70,6 @@
     });
 
     let clockInterval: ReturnType<typeof setInterval>;
-
-    // Local state for ticking elements
     let currentTime = $state("");
     let serviceTimerText = $state<string | null>(null);
     let speakerTimerText = $state<string | null>(null);
@@ -115,7 +113,6 @@
         if (!totalMs || totalMs <= 0) return "text-emerald-400";
 
         const percentLeft = remainingMs / totalMs;
-
         if (percentLeft <= 0.2) return "text-red-500";
         if (percentLeft <= 0.5) return "text-amber-400";
         return "text-emerald-400";
@@ -131,9 +128,8 @@
             second: "2-digit",
         });
 
-        // 2. Service Timer
-        if (display.serviceTargetTimestamp) {
-            const diff = display.serviceTargetTimestamp - now;
+        if (display.localServiceTargetTimestamp) {
+            const diff = display.localServiceTargetTimestamp - now;
             serviceTimerText = diff <= 0 ? "00:00" : formatTime(diff);
         } else {
             serviceTimerText = null;
@@ -141,10 +137,10 @@
 
         // 3. Speaker Timer
         if (
-            display.speakerTargetTimestamp !== null &&
-            display.speakerTargetTimestamp !== undefined
+            display.localSpeakerTargetTimestamp !== null &&
+            display.localSpeakerTargetTimestamp !== undefined
         ) {
-            const diff = display.speakerTargetTimestamp - now;
+            const diff = display.localSpeakerTargetTimestamp - now;
             isSpeakerOverrun = diff < 0;
             speakerTimerText = formatTime(diff);
             speakerTimerColorClass = getSpeakerTimerColor(

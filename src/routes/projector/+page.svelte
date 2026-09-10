@@ -9,7 +9,6 @@
     import { settingsState } from "$lib/state/settings.svelte";
     import { getCoreWorkspaceAPI } from "$lib/commands/settings-db";
 
-    // Store payloads separately
     let presentationPayload = $state<ExtendedPayload>({
         liveText: "",
         nextText: "",
@@ -23,7 +22,6 @@
 
     let controlsPayload = $state<any>({});
 
-    // Derive a single merged display object for the component
     let displayPayload = $derived({
         ...presentationPayload,
         ...controlsPayload,
@@ -32,13 +30,50 @@
     let unlistenPresentation: UnlistenFn;
     let unlistenControls: UnlistenFn;
 
+    // Convert relative network time to absolute local time
+    function processControlsPayload(raw: any) {
+        const now = Date.now();
+        const payload = { ...raw }; // Clone for reactivity
+
+        if (
+            payload.serviceRemainingMs !== null &&
+            payload.serviceRemainingMs !== undefined
+        ) {
+            payload.localServiceTargetTimestamp =
+                now + payload.serviceRemainingMs;
+        } else {
+            payload.localServiceTargetTimestamp = null;
+        }
+
+        if (
+            payload.isSpeakerRunning &&
+            payload.speakerRemainingMs !== null &&
+            payload.speakerRemainingMs !== undefined
+        ) {
+            payload.localSpeakerTargetTimestamp =
+                now + payload.speakerRemainingMs;
+            payload.speakerPausedRemainingMs = null;
+        } else if (
+            !payload.isSpeakerRunning &&
+            payload.speakerRemainingMs !== null &&
+            payload.speakerRemainingMs !== undefined
+        ) {
+            payload.localSpeakerTargetTimestamp = null;
+            payload.speakerPausedRemainingMs = payload.speakerRemainingMs;
+        } else {
+            payload.localSpeakerTargetTimestamp = null;
+            payload.speakerPausedRemainingMs = null;
+        }
+        return payload;
+    }
+
     onMount(async () => {
         const coreWorkspace = await getCoreWorkspaceAPI();
         if (coreWorkspace) {
             settingsState.workspacePath = coreWorkspace;
-
             await fontState.loadFonts();
         }
+
         unlistenPresentation = await listen<ExtendedPayload>(
             "presentation-update",
             (event) => {
@@ -49,11 +84,11 @@
             },
         );
 
+        // FIXED: Wrap payload in transformer
         unlistenControls = await listen("controls-update", (event: any) => {
-            controlsPayload = event.payload;
+            controlsPayload = processControlsPayload(event.payload);
         });
 
-        // Request states on load
         await emit("request-presentation-state");
         await emit("request-controls-state");
     });

@@ -1,6 +1,6 @@
 <!-- src/lib/components/layout/ControlPanel.svelte -->
 <script lang="ts">
-    import { untrack } from "svelte"; // <-- 1. Import untrack
+    import { untrack } from "svelte";
     import { Form, Monitor, Projector, User } from "@lucide/svelte";
     import { systemState } from "$lib/state/system.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
@@ -15,13 +15,11 @@
     let previewTab = $state<"confidence" | "audience">("confidence");
     let live = $derived(systemState.isProjectorOpen || systemState.isStageOpen);
 
-    // Map internal presentation & control state perfectly to the display components
     let displayPayload = $derived({
         // Presentation Data
         liveText: presentation.liveText,
         nextText: presentation.liveNextText,
         liveBackground: presentation.liveBackground,
-
         isBlackout: presentation.isBlackout,
         isTextCleared: presentation.isTextCleared,
         liveReference: presentation.liveReference,
@@ -49,12 +47,14 @@
         showMessageOnStage: controlsState.showMessageOnStage,
         showMessageOnProjector: controlsState.showMessageOnProjector,
 
-        serviceTargetTimestamp: controlsState.serviceTargetTimestamp,
+        // FIXED: Map Absolute targets for local display
+        localServiceTargetTimestamp: controlsState.serviceTargetTimestamp,
         showServiceTimerOnStage: controlsState.showServiceTimerOnStage,
         showServiceTimerOnProjector: controlsState.showServiceTimerOnProjector,
 
-        speakerTargetTimestamp: controlsState.speakerTargetTimestamp,
+        localSpeakerTargetTimestamp: controlsState.speakerTargetTimestamp,
         speakerPausedRemainingMs: controlsState.speakerPausedRemainingMs,
+        isSpeakerRunning: controlsState.speakerTargetTimestamp !== null,
         speakerTotalDurationMs: controlsState.speakerTotalDurationMs,
         showSpeakerTimerOnStage: controlsState.showSpeakerTimerOnStage,
         showSpeakerTimerOnProjector: controlsState.showSpeakerTimerOnProjector,
@@ -62,7 +62,6 @@
 
     $effect(() => {
         const currentProjectorScale = settingsState.config.projector?.textScale;
-
         untrack(() => {
             presentation.recalculateLayout();
         });

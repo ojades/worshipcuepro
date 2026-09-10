@@ -135,18 +135,24 @@ export class ControlsState {
 
   // --- Broadcast ---
   public async broadcastControls() {
+    const now = Date.now();
     const payload = {
       stageMessage: this.stageMessage,
       showMessageOnStage: this.showMessageOnStage,
       showMessageOnProjector: this.showMessageOnProjector,
 
-      serviceTargetTimestamp: this.serviceTargetTimestamp,
+      // end relative time to eliminate network clock drift!
+      serviceRemainingMs: this.serviceTargetTimestamp
+        ? this.serviceTargetTimestamp - now
+        : null,
       showServiceTimerOnStage: this.showServiceTimerOnStage,
       showServiceTimerOnProjector: this.showServiceTimerOnProjector,
 
-      speakerTargetTimestamp: this.speakerTargetTimestamp,
-      speakerPausedRemainingMs: this.speakerPausedRemainingMs,
-      speakerTotalDurationMs: this.speakerDurationMs, // NEW: Pushed to display
+      speakerRemainingMs: this.speakerTargetTimestamp
+        ? this.speakerTargetTimestamp - now
+        : this.speakerPausedRemainingMs,
+      isSpeakerRunning: this.speakerTargetTimestamp !== null,
+      speakerTotalDurationMs: this.speakerDurationMs,
       showSpeakerTimerOnStage: this.showSpeakerTimerOnStage,
       showSpeakerTimerOnProjector: this.showSpeakerTimerOnProjector,
     };

@@ -8,14 +8,13 @@
     export interface ExtendedPayload extends PresentationPayload {
         liveReference?: string | null;
 
-        // Controls Routing Payload
         stageMessage?: string;
         showMessageOnProjector?: boolean;
 
-        serviceTargetTimestamp?: number | null;
+        localServiceTargetTimestamp?: number | null;
         showServiceTimerOnProjector?: boolean;
 
-        speakerTargetTimestamp?: number | null;
+        localSpeakerTargetTimestamp?: number | null;
         speakerPausedRemainingMs?: number | null;
         showSpeakerTimerOnProjector?: boolean;
         speakerTotalDurationMs?: number | null;
@@ -94,6 +93,18 @@
     let timerInterval: ReturnType<typeof setInterval>;
     let bgVideoNode: HTMLVideoElement | null = $state(null);
 
+    // FIXED: Strictly pair toggles with active timestamps to prevent empty overlays
+    let isServiceTimerVisible = $derived(
+        display.showServiceTimerOnProjector &&
+            !!display.localServiceTargetTimestamp,
+    );
+
+    let isSpeakerTimerVisible = $derived(
+        display.showSpeakerTimerOnProjector &&
+            (display.localSpeakerTargetTimestamp !== null ||
+                display.speakerPausedRemainingMs !== null),
+    );
+
     // --- Media Controller Effect ---
     $effect(() => {
         if (bgVideoNode && display.liveBackground) {
@@ -139,15 +150,16 @@
     onMount(() => {
         timerInterval = setInterval(() => {
             const now = Date.now();
-            if (display.serviceTargetTimestamp) {
-                const diff = display.serviceTargetTimestamp - now;
+
+            if (display.localServiceTargetTimestamp) {
+                const diff = display.localServiceTargetTimestamp - now;
                 serviceTimerText = diff <= 0 ? "00:00" : formatTime(diff);
             }
             if (
-                display.speakerTargetTimestamp !== null &&
-                display.speakerTargetTimestamp !== undefined
+                display.localSpeakerTargetTimestamp !== null &&
+                display.localSpeakerTargetTimestamp !== undefined
             ) {
-                const diff = display.speakerTargetTimestamp - now;
+                const diff = display.localSpeakerTargetTimestamp - now;
                 isSpeakerOverrun = diff < 0;
                 speakerTimerText = formatTime(diff);
             } else if (
@@ -156,10 +168,11 @@
             ) {
                 isSpeakerOverrun = display.speakerPausedRemainingMs < 0;
                 speakerTimerText = formatTime(display.speakerPausedRemainingMs);
+            } else {
+                speakerTimerText = "";
             }
         }, 200);
 
-        // Listen for scrub commands from Operator
         const unlistenSeek = listen("media-seek", (e) => {
             if (bgVideoNode) bgVideoNode.currentTime = e.payload as number;
         });
@@ -207,7 +220,6 @@
             class="relative flex-col w-full flex justify-center {horizontalAlignmentClass}"
         >
             {#if display.liveText}
-                <!-- FIX: Render as HTML to support Tiptap Rich Text formatting -->
                 <div
                     class="slide-text text-white cq-pb-offset w-full text-center whitespace-pre-wrap"
                 >
@@ -243,12 +255,12 @@
         </div>
     {/if}
 
-    <!-- 4. Timers Layer -->
-    {#if (display.showServiceTimerOnProjector || display.showSpeakerTimerOnProjector) && (display.serviceTargetTimestamp || display.speakerTargetTimestamp) && !display.liveText}
+    <!-- 4. Timers Layer (FIXED: Using strictly tied derived states) -->
+    {#if (isServiceTimerVisible || isSpeakerTimerVisible) && !display.liveText}
         <div
             class="absolute inset-0 z-40 flex flex-col gap-[4cqh] items-center justify-center bg-black/60 backdrop-blur-xs animate-in fade-in duration-500"
         >
-            {#if display.showServiceTimerOnProjector && display.serviceTargetTimestamp}
+            {#if isServiceTimerVisible}
                 <div class="text-center drop-shadow-2xl">
                     <div
                         class="text-zinc-400 text-[3cqh] font-bold uppercase tracking-widest mb-[-2cqh]"
@@ -263,7 +275,7 @@
                 </div>
             {/if}
 
-            {#if display.showSpeakerTimerOnProjector && (display.speakerTargetTimestamp !== null || display.speakerPausedRemainingMs !== null)}
+            {#if isSpeakerTimerVisible}
                 <div class="text-center drop-shadow-2xl">
                     <div
                         class="text-zinc-400 text-[2cqh] font-bold uppercase tracking-widest mb-[1cqh]"
@@ -345,7 +357,6 @@
         margin: 0;
         white-space: pre-wrap;
     }
-
     :global(.slide-text em) {
         font-style: italic !important;
     }
