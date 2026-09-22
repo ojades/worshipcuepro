@@ -265,7 +265,7 @@
                     <div
                         class="text-zinc-400 text-[3cqh] font-bold uppercase tracking-widest mb-[-2cqh]"
                     >
-                        Next Session Starts In
+                        <!-- Next Session Starts In -->
                     </div>
                     <div
                         class="text-[20cqw] font-black tabular-nums text-white leading-none tracking-tighter"

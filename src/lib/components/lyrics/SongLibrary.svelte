@@ -16,6 +16,7 @@
         title: string;
         artist?: string;
         key?: string;
+        raw_lyrics?: string;
     };
 
     let {
@@ -37,20 +38,18 @@
     let searchQuery = $state("");
     let deletingSongId = $state<string | null>(null); // NEW STATE
 
-    let filteredSongs = $derived(
-        !searchQuery.trim()
-            ? songs
-            : songs.filter(
-                  (song) =>
-                      song.title
-                          .toLowerCase()
-                          .includes(searchQuery.toLowerCase()) ||
-                      (song.artist &&
-                          song.artist
-                              .toLowerCase()
-                              .includes(searchQuery.toLowerCase())),
-              ),
-    );
+    let filteredSongs = $derived.by(() => {
+        const query = searchQuery.trim().toLowerCase();
+
+        if (!query) return songs;
+
+        return songs.filter(
+            (song) =>
+                song.title.toLowerCase().includes(query) ||
+                song.artist?.toLowerCase().includes(query) ||
+                song.raw_lyrics?.toLowerCase().includes(query),
+        );
+    });
 </script>
 
 <div class="h-full overflow-hidden flex flex-col bg-background/50">

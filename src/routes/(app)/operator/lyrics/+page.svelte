@@ -20,6 +20,7 @@
             id: s.id,
             title: s.title,
             artist: s.artist,
+            raw_lyrics: s.raw_lyrics,
         })),
     );
 
