@@ -26,6 +26,10 @@
     );
     let canFormatLayout = $derived(isSongCue || isBibleCue);
 
+    $effect(() => {
+        console.log(presentation.activeCue, presentation.activeCue?.raw_lyrics);
+    });
+
     let isQuickEditing = $state(false);
     let editLyrics = $state("");
 
@@ -33,7 +37,6 @@
     let jumpQuery = $state("");
     let jumpInputRef = $state<HTMLInputElement | null>(null);
 
-    // --- NEW: VERSION SWITCHING STATE ---
     let isVersionDropdownOpen = $state(false);
     let isSwitchingVersion = $state(false);
 

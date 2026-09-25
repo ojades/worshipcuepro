@@ -6,6 +6,7 @@
         BookOpen,
         Image as ImageIcon,
         Play,
+        ListPlus, // <-- NEW IMPORT
     } from "@lucide/svelte";
     import { onMount, onDestroy } from "svelte";
     import { songsState } from "$lib/state/songs.svelte";
@@ -19,6 +20,7 @@
     import { parseLyrics } from "$lib/utils/lyrics";
     import type { FtsSearchResult } from "$lib/commands/bible-db";
     import type { SongSearchResult } from "$lib/commands/song-db";
+    import AddToPlaylistMenu from "$lib/components/ui/AddToPlaylistMenu.svelte"; // <-- NEW IMPORT
 
     let searchQuery = $state("");
     let activeTab = $state<"all" | "songs" | "bible" | "media">("all");
@@ -263,7 +265,6 @@
 
     async function fireResult(result: any) {
         if (result.type === "song") {
-            // FIX: Retrieve the full song and generate a cue on the fly, skipping the playlist
             const fullSong = songsState.songs.find(
                 (s) => s.id === result.payload.id,
             );
@@ -272,6 +273,8 @@
                     id: fullSong.id,
                     type: "song",
                     title: fullSong.title,
+                    raw_lyrics: fullSong.raw_lyrics,
+                    lines_per_slide: fullSong.lines_per_slide,
                     sections: parseLyrics(
                         fullSong.raw_lyrics || "",
                         fullSong.lines_per_slide || 0,
@@ -282,7 +285,7 @@
                     `song_${fullSong.id}`,
                     `slide_${fullSong.id}_0`,
                 );
-                goto("/operator"); // Switch to operator view so they can see the fired cue
+                goto("/operator");
             }
         } else if (result.type === "version_switch") {
             bibleState.switchBibleVersionLive(result.payload.id);
@@ -462,7 +465,7 @@
                             : 'bg-transparent border-transparent hover:bg-zinc-800/50'}"
                     >
                         <div
-                            class="flex items-center gap-3 overflow-hidden w-full"
+                            class="flex items-center gap-3 overflow-hidden w-full pr-2"
                         >
                             {const safeUrl =
                                 result.type === "media"
@@ -536,16 +539,42 @@
                             </div>
                         </div>
 
-                        {#if selectedIndex === i}
-                            <button
-                                class="shrink-0 px-3 py-1 bg-neon-violet text-white text-[10px] font-bold uppercase tracking-wider rounded flex items-center gap-1 shadow-lg shadow-neon-violet/20 animate-in fade-in slide-in-from-right-2"
-                            >
-                                <Play size={10} class="fill-current" />
-                                {result.type === "version_switch"
-                                    ? "Apply"
-                                    : "Fire"}
-                            </button>
-                        {/if}
+                        <!-- NEW: Action Buttons Container -->
+                        <div class="flex items-center gap-2 shrink-0">
+                            <!-- Add to Playlist Button -->
+                            {#if result.type === "song" || result.type === "media"}
+                                <div
+                                    class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center"
+                                    onclick={(e) => e.stopPropagation()}
+                                >
+                                    <AddToPlaylistMenu
+                                        cueId={result.payload.id}
+                                        cueType={result.type}
+                                        direction="down"
+                                        align="right"
+                                    >
+                                        <button
+                                            class="p-1.5 text-zinc-500 hover:text-neon-cyan hover:bg-zinc-800 rounded transition-colors"
+                                            title="Add to Playlist"
+                                        >
+                                            <ListPlus size={16} />
+                                        </button>
+                                    </AddToPlaylistMenu>
+                                </div>
+                            {/if}
+
+                            <!-- Existing Fire/Apply Button -->
+                            {#if selectedIndex === i}
+                                <button
+                                    class="shrink-0 px-3 py-1.5 bg-neon-violet text-white text-[10px] font-bold uppercase tracking-wider rounded flex items-center gap-1 shadow-lg shadow-neon-violet/20 animate-in fade-in slide-in-from-right-2"
+                                >
+                                    <Play size={10} class="fill-current" />
+                                    {result.type === "version_switch"
+                                        ? "Apply"
+                                        : "Fire"}
+                                </button>
+                            {/if}
+                        </div>
                     </div>
                 {/each}
             </div>
