@@ -3,6 +3,7 @@
     import { onMount } from "svelte";
     import { getNetworkUrls, type NetworkUrls } from "$lib/utils/helper";
     import { RefreshCw } from "@lucide/svelte";
+    import RemoteQr from "$lib/components/ui/RemoteQr.svelte";
 
     let urls = $state<NetworkUrls | null>(null);
     let copiedObs = $state(false);
@@ -13,7 +14,6 @@
         urls = await getNetworkUrls();
     });
 
-    // --- NEW: Refresh Function ---
     async function refreshUrls() {
         isRefreshing = true;
         urls = await getNetworkUrls();
@@ -41,7 +41,6 @@
 </script>
 
 <div class="max-w-2xl animate-in fade-in duration-300">
-    <!-- Flex container to align title and refresh button -->
     <div class="flex items-center justify-between mb-2">
         <h1 class="text-2xl font-bold text-foreground">Remote Display</h1>
 
@@ -61,6 +60,9 @@
 
     {#if urls}
         <div class="space-y-4">
+            <!-- Embedded QR Component -->
+            <RemoteQr />
+
             <!-- OBS Network URL -->
             <div
                 class="flex flex-col gap-3 p-5 border border-border rounded-xl bg-card text-card-foreground shadow-sm"

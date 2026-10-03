@@ -18,8 +18,8 @@
     let stageMessageInput = $state("");
     let serviceTimeInput = $state("09:00");
 
-    // --- New Speaker Timer Adjustment State ---
-    let adjustmentInput = $state(5); // Default to 5 minutes
+    // --- Speaker Timer Adjustment State ---
+    let adjustmentInput = $state(5);
     let pendingAdjustment = $state<number | null>(null);
     let adjustmentTimeout: ReturnType<typeof setTimeout>;
 
@@ -77,7 +77,7 @@
 <div
     class="flex-1 overflow-y-auto flex flex-col pr-1 gap-4 pb-12 scrollbar-none"
 >
-    <!-- 1. MESSAGE CARD (Unchanged) -->
+    <!-- MESSAGE CARD -->
     <div
         class="bg-background/50 border border-border rounded-xl p-3 flex flex-col gap-3"
     >
@@ -143,7 +143,7 @@
         </div>
     </div>
 
-    <!-- 2. SPEAKER TIMER CARD (UPDATED) -->
+    <!-- `SPEAKER TIMER CARD (UPDATED)` -->
     <div
         class="bg-background/50 border border-border rounded-xl p-3 flex flex-col gap-3"
     >
@@ -271,7 +271,7 @@
         {/if}
     </div>
 
-    <!-- 3. SERVICE COUNTDOWN CARD (Unchanged) -->
+    <!-- SERVICE COUNTDOWN CARD -->
     <div
         class="bg-background/50 border border-border rounded-xl p-3 flex flex-col gap-3"
     >

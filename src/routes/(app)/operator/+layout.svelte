@@ -1,18 +1,11 @@
 <!-- /src/routes/operator/+layout.svelte -->
 <script lang="ts">
-    // import "../../app.css";
     import { page } from "$app/stores";
-
-    // Global Layout Components
     import SideNav from "$lib/components/layout/SideNav.svelte";
     import ControlPanel from "$lib/components/layout/ControlPanel.svelte";
-
-    // State
     import HeaderBar from "$lib/components/layout/HeaderBar.svelte";
 
     let { children } = $props();
-
-    // Derive current workspace from the URL for the Header and Panel toggling
     let currentWorkspace = $derived(() => {
         const path = $page.url.pathname;
         if (path.includes("/lyrics")) return "lyrics";
@@ -20,14 +13,13 @@
         if (path.includes("/media")) return "media";
         if (path.includes("/shoots")) return "shoots";
         if (path.includes("/settings")) return "settings";
-        return "cue"; // Default root route
+        return "cue";
     });
 </script>
 
 <div
     class="flex h-screen w-screen bg-background text-foreground antialiased overflow-hidden select-none"
 >
-    <!-- Left Sidebar Navigation Wrapper -->
     <SideNav />
 
     <!-- Right Side Content Stack -->

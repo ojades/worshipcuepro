@@ -1,3 +1,4 @@
+// /src-tauri/src/obs.rs
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -14,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
+use tauri::Emitter;
 use tauri::Manager;
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
@@ -31,6 +33,7 @@ pub struct CueData {
 pub struct AppState {
     pub tx: broadcast::Sender<String>,
     pub cache: Arc<RwLock<HashMap<String, String>>>,
+    pub app_handle: tauri::AppHandle,
 }
 
 // Struct to read your custom workspace path
@@ -49,7 +52,11 @@ pub async fn start_server(
     cache: Arc<RwLock<HashMap<String, String>>>,
     app_handle: tauri::AppHandle,
 ) {
-    let app_state = Arc::new(AppState { tx, cache });
+    let app_state = Arc::new(AppState {
+        tx,
+        cache,
+        app_handle: app_handle.clone(),
+    });
 
     // ---Find the workspace media directory ---
     let app_dir = app_handle.path().app_data_dir().unwrap();
@@ -134,8 +141,13 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         }
     });
 
-    let mut recv_task =
-        tokio::spawn(async move { while let Some(Ok(_)) = receiver.next().await {} });
+    let app_handle = state.app_handle.clone();
+    let mut recv_task = tokio::spawn(async move {
+        while let Some(Ok(Message::Text(text))) = receiver.next().await {
+            // Forward the raw JSON string to Svelte
+            let _ = app_handle.emit("remote-command", text);
+        }
+    });
 
     tokio::select! {
         _ = (&mut send_task) => recv_task.abort(),

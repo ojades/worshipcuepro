@@ -1,10 +1,10 @@
 <!-- src/routes/(app)/+layout.svelte -->
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, onDestroy } from "svelte";
     import { settingsState } from "$lib/state/settings.svelte";
     import Alert from "$lib/components/layout/Alert.svelte";
     import { invoke } from "@tauri-apps/api/core";
-    import { emit } from "@tauri-apps/api/event";
+    import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
     import { relaunch } from "@tauri-apps/plugin-process";
 
     import NIV from "$lib/data/bibles/NIV.json";
@@ -27,12 +27,16 @@
     import { systemState } from "$lib/state/system.svelte";
     import AutoUpdater from "$lib/components/layout/AutoUpdater.svelte";
     import { playlists } from "$lib/state/playlists.svelte";
+    import { presentation } from "$lib/state/presentation.svelte";
+    import { controlsState } from "$lib/state/controls.svelte";
 
     let { children } = $props();
 
     let isAppReady = $state(false);
     let needsSetup = $state(false);
     let initStatus = $state("INITIALIZING ENGINE...");
+
+    let unlistenRemote: UnlistenFn;
 
     let formattedLockOwner = $derived(
         settingsState.lockOwner
@@ -92,10 +96,8 @@
                 playlists.loadAll(),
             ]);
 
-            // Set UI Ready BEFORE starting heavy background Bible imports!
             isAppReady = true;
 
-            // Background Bible verification & import (Non-blocking)
             setTimeout(async () => {
                 try {
                     await bibleState.importXmlBible(NKJV, "NKJV");
@@ -107,7 +109,6 @@
                 }
             }, 1000);
 
-            // Periodically check lock and offline status
             setInterval(async () => {
                 if (!settingsState.workspacePath) return;
 
@@ -128,10 +129,9 @@
                             timeout: 8000,
                         });
                     }
-                    return; // Skip operator lock check while offline
+                    return;
                 }
 
-                // If online, check standard operator lock
                 const currentLockOwner = await invoke<string>(
                     "check_and_acquire_lock",
                 );
@@ -210,6 +210,62 @@
             console.error("Critical error during app startup:", fatalError);
             needsSetup = true;
             await invoke("close_splashscreen").catch(console.error);
+        }
+
+        // Assign to outer variable directly
+        unlistenRemote = await listen("remote-command", (event: any) => {
+            try {
+                const data = JSON.parse(event.payload);
+
+                switch (data.action) {
+                    case "NEXT_SLIDE":
+                        if (presentation.nextSlide) presentation.nextSlide();
+                        break;
+                    case "PREV_SLIDE":
+                        if (presentation.prevSlide) presentation.prevSlide();
+                        break;
+                    case "CLEAR_TEXT":
+                        presentation.isTextCleared =
+                            !presentation.isTextCleared;
+                        presentation.broadcastState();
+                        break;
+                    case "BLACKOUT":
+                        presentation.isBlackout = !presentation.isBlackout;
+                        presentation.broadcastState();
+                        break;
+                    case "TOGGLE_SPEAKER_TIMER":
+                        if (controlsState.isSpeakerTimerRunning) {
+                            controlsState.pauseSpeakerTimer();
+                        } else {
+                            controlsState.startSpeakerTimer();
+                        }
+                        break;
+                    case "RESET_SPEAKER_TIMER":
+                        controlsState.resetSpeakerTimer();
+                        break;
+                    case "ADJUST_SPEAKER_TIMER":
+                        controlsState.adjustSpeakerTimer(data.value);
+                        break;
+                    case "SET_SPEAKER_DURATION":
+                        controlsState.setSpeakerDuration(data.value);
+                        break;
+                    case "START_SERVICE_TIMER":
+                        controlsState.startServiceTimer(new Date(data.value));
+                        break;
+                    case "STOP_SERVICE_TIMER":
+                        controlsState.stopServiceTimer();
+                        break;
+                }
+            } catch (e) {
+                console.error("Failed to parse remote command:", e);
+            }
+        });
+    });
+
+    // FIXED: Proper Svelte cleanup pattern
+    onDestroy(() => {
+        if (unlistenRemote) {
+            unlistenRemote();
         }
     });
 
