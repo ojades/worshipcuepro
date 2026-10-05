@@ -25,7 +25,7 @@
     // Convert relative network time to absolute local time
     function processControlsPayload(raw: any) {
         const now = Date.now();
-        const payload = { ...raw }; // FIXED: Clone object to force Svelte Reactivity
+        const payload = { ...raw };
 
         if (
             payload.serviceRemainingMs !== null &&
@@ -93,6 +93,12 @@
         const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
 
         socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+            if (socket?.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ action: "REQUEST_STATE" }));
+            }
+        };
 
         socket.onmessage = (event) => {
             try {

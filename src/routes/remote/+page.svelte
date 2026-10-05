@@ -22,7 +22,10 @@
 
         socket = new WebSocket(wsUrl);
 
-        socket.onopen = () => (isConnected = true);
+        socket.onopen = () => {
+            isConnected = true;
+            socket?.send(JSON.stringify({ action: "REQUEST_STATE" }));
+        };
 
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
@@ -61,7 +64,7 @@
 </svelte:head>
 
 <main
-    class="h-screen w-screen bg-black text-white flex flex-col font-sans overflow-hidden select-none"
+    class="fixed inset-0 bg-black text-white flex flex-col font-sans overflow-hidden select-none overscroll-none"
 >
     <!-- Header -->
     <header
@@ -147,7 +150,7 @@
         {:else if activeTab === "timers"}
             <!-- TIMER CONTROLS -->
             <div
-                class="absolute inset-0 flex flex-col animate-in fade-in slide-in-from-right-4 duration-300"
+                class="flex-1 flex flex-col animate-in fade-in slide-in-from-right-4 duration-300 relative"
             >
                 <Timers {controlsData} {sendCommand} />
             </div>

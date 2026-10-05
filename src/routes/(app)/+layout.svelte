@@ -218,6 +218,10 @@
                 const data = JSON.parse(event.payload);
 
                 switch (data.action) {
+                    case "REQUEST_STATE":
+                        presentation.broadcastState();
+                        controlsState.broadcastControls();
+                        break;
                     case "NEXT_SLIDE":
                         if (presentation.nextSlide) presentation.nextSlide();
                         break;

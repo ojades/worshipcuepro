@@ -24,11 +24,8 @@
 
     <!-- Right Side Content Stack -->
     <div class="flex-1 flex flex-col min-w-0 h-full relative">
-        <!-- Global Action Bar -->
         <HeaderBar title={currentWorkspace()} />
-        <!-- Core Content Partition Workspace -->
         <div class="flex-1 flex min-h-0 w-full overflow-hidden">
-            <!-- SvelteKit Router Switching Container -->
             <div
                 class="flex-1 overflow-hidden min-w-0 bg-background flex flex-col"
             >

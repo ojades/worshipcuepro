@@ -1,7 +1,7 @@
 <!-- /src/routes/remote/components/timers.svelte -->
 <script lang="ts">
     import { Clock, Play, Pause, RotateCcw, Plus, Minus } from "@lucide/svelte";
-    import { onMount, onDestroy } from "svelte";
+    import { onMount, onDestroy, untrack } from "svelte";
 
     let { controlsData, sendCommand } = $props<{
         controlsData: any;
@@ -10,6 +10,8 @@
 
     // Local inputs for setting new timers
     let manualSpeakerMinutes = $state(50);
+    let isEditingSpeaker = $state(false);
+
     let serviceTimeInput = $state("12:00");
     let timerInterval: ReturnType<typeof setInterval>;
 
@@ -17,6 +19,62 @@
     let speakerTimerDisplay = $state("--:--");
     let serviceTimerDisplay = $state("--:--");
     let isSpeakerOverrun = $state(false);
+
+    let localServiceTargetTimestamp = $state<number | null>(null);
+    let localSpeakerTargetTimestamp = $state<number | null>(null);
+    let speakerPausedRemainingMs = $state<number | null>(null);
+
+    // Reactively freeze local absolute targets when new data arrives from the network
+    $effect(() => {
+        if (!controlsData) return;
+        const now = Date.now();
+
+        if (controlsData.speakerTotalDurationMs) {
+            const incomingMinutes = Math.round(
+                controlsData.speakerTotalDurationMs / 60000,
+            );
+
+            untrack(() => {
+                // Only sync the network value if the user isn't actively typing in the box
+                if (
+                    manualSpeakerMinutes !== incomingMinutes &&
+                    !isEditingSpeaker
+                ) {
+                    manualSpeakerMinutes = incomingMinutes;
+                }
+            });
+        }
+
+        // Handle Service Timer
+        if (
+            controlsData.serviceRemainingMs !== null &&
+            controlsData.serviceRemainingMs !== undefined
+        ) {
+            localServiceTargetTimestamp = now + controlsData.serviceRemainingMs;
+        } else {
+            localServiceTargetTimestamp = null;
+        }
+
+        // Handle Speaker Timer
+        if (
+            controlsData.isSpeakerRunning &&
+            controlsData.speakerRemainingMs !== null &&
+            controlsData.speakerRemainingMs !== undefined
+        ) {
+            localSpeakerTargetTimestamp = now + controlsData.speakerRemainingMs;
+            speakerPausedRemainingMs = null;
+        } else if (
+            !controlsData.isSpeakerRunning &&
+            controlsData.speakerRemainingMs !== null &&
+            controlsData.speakerRemainingMs !== undefined
+        ) {
+            localSpeakerTargetTimestamp = null;
+            speakerPausedRemainingMs = controlsData.speakerRemainingMs;
+        } else {
+            localSpeakerTargetTimestamp = null;
+            speakerPausedRemainingMs = null;
+        }
+    });
 
     function formatTime(ms: number) {
         const totalSeconds = Math.floor(Math.abs(ms) / 1000);
@@ -28,44 +86,25 @@
         return ms < 0 ? `-${formatted}` : formatted;
     }
 
-    // This loop allows the mobile app to show the actual countdown locally
-    // without needing constant WebSocket blasts.
     function tick() {
-        if (!controlsData) return;
         const now = Date.now();
 
         // Service Timer
-        if (
-            controlsData.serviceRemainingMs !== null &&
-            controlsData.serviceRemainingMs !== undefined
-        ) {
-            // We use the last received remaining Ms to calculate a local target
-            // (Assuming payload arrived very recently. For a remote, this is usually acceptable).
-            const diff = controlsData.serviceRemainingMs;
+        if (localServiceTargetTimestamp !== null) {
+            const diff = localServiceTargetTimestamp - now;
             serviceTimerDisplay = diff <= 0 ? "00:00" : formatTime(diff);
-
-            // To make it tick locally between websocket updates:
-            // Decrease the stored remaining time by 200ms every tick
-            controlsData.serviceRemainingMs -= 200;
         } else {
             serviceTimerDisplay = "--:--";
         }
 
         // Speaker Timer
-        if (
-            controlsData.isSpeakerRunning &&
-            controlsData.speakerRemainingMs !== null
-        ) {
-            const diff = controlsData.speakerRemainingMs;
+        if (localSpeakerTargetTimestamp !== null) {
+            const diff = localSpeakerTargetTimestamp - now;
             isSpeakerOverrun = diff < 0;
             speakerTimerDisplay = formatTime(diff);
-            controlsData.speakerRemainingMs -= 200;
-        } else if (
-            !controlsData.isSpeakerRunning &&
-            controlsData.speakerRemainingMs !== null
-        ) {
-            isSpeakerOverrun = controlsData.speakerRemainingMs < 0;
-            speakerTimerDisplay = formatTime(controlsData.speakerRemainingMs);
+        } else if (speakerPausedRemainingMs !== null) {
+            isSpeakerOverrun = speakerPausedRemainingMs < 0;
+            speakerTimerDisplay = formatTime(speakerPausedRemainingMs);
         } else {
             speakerTimerDisplay = formatTime(manualSpeakerMinutes * 60000);
             isSpeakerOverrun = false;
@@ -73,6 +112,7 @@
     }
 
     onMount(() => {
+        tick();
         timerInterval = setInterval(tick, 200);
         return () => clearInterval(timerInterval);
     });
@@ -87,7 +127,6 @@
             targetDate.setDate(targetDate.getDate() + 1);
         }
 
-        // Pass the absolute timestamp so the backend can sync it globally
         sendCommand("START_SERVICE_TIMER", targetDate.getTime());
     }
 
@@ -119,9 +158,17 @@
                 <input
                     type="number"
                     bind:value={manualSpeakerMinutes}
-                    onchange={setSpeakerDuration}
-                    disabled={controlsData?.isSpeakerRunning}
-                    class="w-10 bg-transparent text-center text-sm outline-none text-white font-bold disabled:opacity-50"
+                    onfocus={() => (isEditingSpeaker = true)}
+                    onblur={() => {
+                        isEditingSpeaker = false;
+                        setSpeakerDuration();
+                    }}
+                    onkeydown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                    }}
+                    disabled={localSpeakerTargetTimestamp !== null ||
+                        speakerPausedRemainingMs !== null}
+                    class="w-12 bg-transparent text-center text-sm outline-none text-white font-bold disabled:opacity-50"
                     min="1"
                 />
                 <span class="text-[10px] text-zinc-500 font-bold pr-1">MIN</span
@@ -201,7 +248,7 @@
         </div>
 
         <div class="w-full mt-2">
-            {#if controlsData?.serviceRemainingMs !== null && controlsData?.serviceRemainingMs !== undefined}
+            {#if localServiceTargetTimestamp !== null}
                 <button
                     onclick={handleStopService}
                     class="w-full py-3 bg-red-500/20 text-red-500 active:bg-red-500/30 rounded-xl font-bold flex justify-center items-center gap-2 transition-colors border border-red-500/30"
