@@ -29,6 +29,7 @@
     import { playlists } from "$lib/state/playlists.svelte";
     import { presentation } from "$lib/state/presentation.svelte";
     import { controlsState } from "$lib/state/controls.svelte";
+    import QuickFinder from "$lib/components/layout/cue/QuickFinder.svelte";
 
     let { children } = $props();
 
@@ -345,6 +346,7 @@
     <div class="flex-1 flex flex-col min-h-0 overflow-hidden relative">
         {@render children()}
     </div>
+    <QuickFinder />
     <AutoUpdater />
     <Alert />
     <GlobalShortcuts />

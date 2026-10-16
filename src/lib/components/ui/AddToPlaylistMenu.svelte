@@ -25,6 +25,8 @@
 
     let isOpen = $state(false);
     let showSuccess = $state(false);
+    let menuElement = $state<HTMLElement | null>(null);
+    let computedDirection = $state(direction);
 
     async function handleAdd(playlistId: string) {
         if (Array.isArray(cueId)) {
@@ -44,16 +46,30 @@
             showSuccess = false;
         }, 1500);
     }
+
+    function toggleMenu(e: MouseEvent) {
+        e.stopPropagation();
+        if (showSuccess) return;
+
+        if (!isOpen) {
+            const rect = (
+                e.currentTarget as HTMLElement
+            ).getBoundingClientRect();
+            if (rect.bottom > window.innerHeight - 250) {
+                computedDirection = "up";
+            } else {
+                computedDirection = direction;
+            }
+        }
+        isOpen = !isOpen;
+    }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
     class="relative inline-block {className}"
-    onclick={(e) => {
-        e.stopPropagation();
-        if (!showSuccess) isOpen = !isOpen;
-    }}
+    onclick={toggleMenu}
     onmousedown={(e) => e.stopPropagation()}
 >
     <!-- Trigger -->
@@ -80,15 +96,16 @@
 
         <!-- Dynamic Classes applied here -->
         <div
-            class="absolute w-56 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden max-h-60 overflow-y-auto custom-scrollbar flex flex-col py-1 text-left animate-in fade-in duration-200
-            {direction === 'up'
+            bind:this={menuElement}
+            class="absolute w-56 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden max-h-60 overflow-y-auto custom-scrollbar flex flex-col gap-1 p-1 text-left animate-in fade-in duration-200
+            {computedDirection === 'up'
                 ? 'bottom-full mb-2 slide-in-from-bottom-2'
                 : 'top-full mt-2 slide-in-from-top-2'}
             {align === 'left' ? 'left-0' : 'right-0'}"
             onclick={(e) => e.stopPropagation()}
         >
             <div
-                class="px-3 py-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800/50 mb-1"
+                class="shrink-0 px-3 py-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800/50"
             >
                 Add to Playlist...
             </div>
@@ -97,27 +114,27 @@
                 <button
                     type="button"
                     onclick={() => handleAdd(presentation.activePlaylist!.id)}
-                    class="w-full text-left px-3 py-2.5 text-sm text-neon-cyan hover:bg-zinc-800 transition-colors flex items-center justify-between"
+                    class="shrink-0 w-full text-left px-3 py-2.5 text-sm text-neon-cyan hover:bg-zinc-800 rounded-lg transition-colors flex items-center justify-between font-medium"
                 >
-                    <span class="truncate font-medium"
+                    <span class="truncate"
                         >Active: {presentation.activePlaylist.name}</span
                     >
                 </button>
-                <div class="h-px bg-zinc-800/50 my-1 mx-3"></div>
+                <div class="shrink-0 h-px bg-zinc-800/50 my-1 mx-2"></div>
             {/if}
 
             {#each playlists.allPlaylists as p}
                 <button
                     type="button"
                     onclick={() => handleAdd(p.id)}
-                    class="w-full text-left px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors truncate"
+                    class="shrink-0 w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors truncate"
                 >
                     {p.name}
                 </button>
             {/each}
 
             {#if playlists.allPlaylists.length === 0}
-                <div class="px-4 py-3 text-sm text-zinc-500 italic">
+                <div class="shrink-0 px-4 py-3 text-sm text-zinc-500 italic">
                     No playlists available
                 </div>
             {/if}

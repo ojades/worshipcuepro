@@ -361,9 +361,9 @@
     </div>
 
     <!-- Quick Finder (Bottom 1/3) -->
-    <div
+    <!-- <div
         class="h-1/3 min-h-70 shrink-0 border-t border-border bg-card/30 p-6 flex flex-col gap-4 z-0"
     >
         <QuickFinder />
-    </div>
+    </div> -->
 </div>
