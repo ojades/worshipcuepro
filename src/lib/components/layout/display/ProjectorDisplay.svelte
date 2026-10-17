@@ -4,6 +4,7 @@
     import type { PresentationPayload } from "$lib/types/models";
     import { onMount } from "svelte";
     import { listen } from "@tauri-apps/api/event";
+    import { fade, fly } from "svelte/transition";
 
     export interface ExtendedPayload extends PresentationPayload {
         liveReference?: string | null;
@@ -93,7 +94,6 @@
     let timerInterval: ReturnType<typeof setInterval>;
     let bgVideoNode: HTMLVideoElement | null = $state(null);
 
-    // FIXED: Strictly pair toggles with active timestamps to prevent empty overlays
     let isServiceTimerVisible = $derived(
         display.showServiceTimerOnProjector &&
             !!display.localServiceTargetTimestamp,
@@ -105,7 +105,6 @@
                 display.speakerPausedRemainingMs !== null),
     );
 
-    // --- Media Controller Effect ---
     $effect(() => {
         if (bgVideoNode && display.liveBackground) {
             bgVideoNode.muted = display.liveBackground.isMuted ?? true;
@@ -189,26 +188,28 @@
     class:opacity-0={display.isBlackout}
     style={styleString}
 >
-    <!-- 1. Background Layer (UNIFIED MEDIA) -->
+    <!-- 1. Background Layer (UNIFIED MEDIA WITH CROSSFADE) -->
     {#if display.liveBackground}
-        {#if display.liveBackground.type === "video"}
-            {#key display.liveBackground.url}
+        {#key display.liveBackground.url}
+            {#if display.liveBackground.type === "video"}
                 <!-- svelte-ignore a11y_media_has_caption -->
                 <video
                     bind:this={bgVideoNode}
                     src={display.liveBackground.url}
                     use:seamlessLoop
+                    transition:fade={{ duration: 600 }}
                     class="absolute inset-0 w-full h-full object-cover z-0"
                     loop
                 ></video>
-            {/key}
-        {:else}
-            <img
-                src={display.liveBackground.url}
-                alt="Background"
-                class="absolute inset-0 w-full h-full object-cover z-0"
-            />
-        {/if}
+            {:else}
+                <img
+                    src={display.liveBackground.url}
+                    alt="Background"
+                    transition:fade={{ duration: 600 }}
+                    class="absolute inset-0 w-full h-full object-cover z-0"
+                />
+            {/if}
+        {/key}
     {/if}
 
     <!-- 2. Main Text Layer -->
@@ -219,30 +220,45 @@
         <div
             class="relative flex-col w-full flex justify-center {horizontalAlignmentClass}"
         >
-            {#if display.liveText}
-                <div
-                    class="slide-text text-white cq-pb-offset w-full text-center whitespace-pre-wrap"
-                >
-                    {@html display.liveText}
-                </div>
-            {/if}
+            <!-- CSS Grid wraps the text so fading elements stack perfectly on top of each other -->
+            <div class="grid w-full items-center justify-items-center relative">
+                {#key display.liveText}
+                    {#if display.liveText}
+                        <div
+                            in:fade={{ duration: 400 }}
+                            out:fade={{ duration: 400 }}
+                            class="col-start-1 row-start-1 slide-text text-white cq-pb-offset w-full text-center whitespace-pre-wrap"
+                            style="will-change: opacity;"
+                        >
+                            {@html display.liveText}
+                        </div>
+                    {/if}
+                {/key}
+            </div>
 
-            {#if display.liveReference}
-                <div
-                    class="absolute z-20 transition-opacity duration-300 -mb-2 {referencePositionClass}"
-                >
-                    <p class="slide-reference text-white/90">
-                        {display.liveReference}
-                    </p>
-                </div>
-            {/if}
+            <!-- Scripture References Crossfade -->
+            {#key display.liveReference}
+                {#if display.liveReference}
+                    <div
+                        in:fade={{ duration: 400 }}
+                        out:fade={{ duration: 400 }}
+                        class="absolute z-20 -mb-2 {referencePositionClass}"
+                        style="will-change: opacity;"
+                    >
+                        <p class="slide-reference text-white/90">
+                            {display.liveReference}
+                        </p>
+                    </div>
+                {/if}
+            {/key}
         </div>
     </div>
 
     <!-- 3. Alert Message Layer -->
     {#if display.showMessageOnProjector && display.stageMessage}
         <div
-            class="absolute top-[8cqh] inset-x-0 z-50 flex items-center justify-center animate-in slide-in-from-top duration-500"
+            transition:fly={{ y: -30, duration: 400 }}
+            class="absolute top-[8cqh] inset-x-0 z-50 flex items-center justify-center"
         >
             <div
                 class="bg-red-600 border border-red-400 text-white py-[2cqh] px-[6cqw] rounded-full shadow-[0_20px_50px_rgba(220,38,38,0.5)]"
@@ -255,18 +271,18 @@
         </div>
     {/if}
 
-    <!-- 4. Timers Layer (FIXED: Using strictly tied derived states) -->
+    <!-- 4. Timers Layer -->
     {#if (isServiceTimerVisible || isSpeakerTimerVisible) && !display.liveText}
         <div
-            class="absolute inset-0 z-40 flex flex-col gap-[4cqh] items-center justify-center bg-black/60 backdrop-blur-xs animate-in fade-in duration-500"
+            transition:fade={{ duration: 400 }}
+            class="absolute inset-0 z-40 flex flex-col gap-[4cqh] items-center justify-center bg-black/60 backdrop-blur-xs"
         >
             {#if isServiceTimerVisible}
-                <div class="text-center drop-shadow-2xl">
-                    <div
-                        class="text-zinc-400 text-[3cqh] font-bold uppercase tracking-widest mb-[-2cqh]"
-                    >
-                        <!-- Next Session Starts In -->
-                    </div>
+                <div
+                    in:fly={{ y: 20, duration: 500, delay: 100 }}
+                    out:fade={{ duration: 200 }}
+                    class="text-center drop-shadow-2xl"
+                >
                     <div
                         class="text-[20cqw] font-black tabular-nums text-white leading-none tracking-tighter"
                     >
@@ -276,7 +292,11 @@
             {/if}
 
             {#if isSpeakerTimerVisible}
-                <div class="text-center drop-shadow-2xl">
+                <div
+                    in:fly={{ y: 20, duration: 500, delay: 200 }}
+                    out:fade={{ duration: 200 }}
+                    class="text-center drop-shadow-2xl"
+                >
                     <div
                         class="text-zinc-400 text-[2cqh] font-bold uppercase tracking-widest mb-[1cqh]"
                     >
@@ -295,6 +315,7 @@
     {/if}
 </div>
 
+<!-- Styles remain unchanged -->
 <style>
     .display-container {
         container-type: size;

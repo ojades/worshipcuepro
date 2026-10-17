@@ -1,7 +1,8 @@
+<!-- src/lib/components/layout/Sidebar.svelte -->
 <script lang="ts">
     import { page } from "$app/stores";
     import { libraryState } from "$lib/state/library.svelte";
-    import { MonitorPlay } from "@lucide/svelte";
+    import { MonitorPlay, Search } from "@lucide/svelte"; // <-- Added Search icon
     import BookOpen from "@lucide/svelte/icons/book-open";
     import Film from "@lucide/svelte/icons/film";
     import Library from "@lucide/svelte/icons/library";
@@ -48,6 +49,11 @@
             shortcut: SHORTCUTS.NAV_SETTINGS,
         },
     ];
+
+    // --- NEW: Trigger QuickFinder Spotlight modal ---
+    function openQuickFinder() {
+        window.dispatchEvent(new CustomEvent("shortcut-quick-finder"));
+    }
 </script>
 
 <aside
@@ -64,7 +70,7 @@
         />
     </div>
 
-    <nav class="flex-1 flex flex-col gap-3 w-full px-2">
+    <nav class="flex-1 flex flex-col w-full px-2">
         {#each navItems as item}
             {@const isActive =
                 item.id === ""
@@ -93,6 +99,21 @@
                     >
                 </button>
             </a>
-        {/each}
+            ​{/each}
     </nav>
+
+    <!-- --- NEW: Bottom Search Trigger Button --- -->
+    <div class="w-full px-2 mt-auto">
+        <button
+            onclick={openQuickFinder}
+            class="w-full py-2 aspect-square rounded-xl flex flex-col items-center justify-center text-zinc-400 hover:text-neon-violet hover:bg-muted/30 transition-all duration-200 relative group cursor-pointer border border-transparent hover:border-zinc-800"
+            title="Quick Finder ({formatShortcut(SHORTCUTS.QUICK_FINDER)})"
+            aria-label="Quick Finder"
+        >
+            <Search size={26} strokeWidth={1.8} />
+            <span class="text-[10px] mt-1 font-medium tracking-wide opacity-80"
+                >Search</span
+            >
+        </button>
+    </div>
 </aside>

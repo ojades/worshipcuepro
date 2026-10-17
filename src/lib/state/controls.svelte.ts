@@ -17,8 +17,8 @@ export class ControlsState {
   // Service Countdown State
   // -------------------------
   serviceTargetTimestamp = $state<number | null>(null);
-  showServiceTimerOnStage = $state(true);
-  showServiceTimerOnProjector = $state(false);
+  showServiceTimerOnStage = $state(false);
+  showServiceTimerOnProjector = $state(true);
   isServiceTimerActive = $derived(this.serviceTargetTimestamp !== null);
 
   // -------------------------

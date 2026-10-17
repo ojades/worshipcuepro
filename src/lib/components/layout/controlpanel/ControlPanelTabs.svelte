@@ -51,7 +51,7 @@
                 size={14}
                 class={activeTab === "stage" ? "text-emerald-400" : ""}
             />
-            Stage
+            Controls
         </button>
     </div>
 
