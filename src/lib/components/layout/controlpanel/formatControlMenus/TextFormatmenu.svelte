@@ -45,9 +45,9 @@
     >
         <div class="flex items-center gap-2 text-muted-foreground">
             <Settings2 size={14} />
-            <span class="text-[10px] font-bold uppercase tracking-wider"
-                >Lines per Slide</span
-            >
+            <span class="text-[10px] font-bold uppercase tracking-wider">
+                Lines per Slide
+            </span>
         </div>
         <select
             class="bg-zinc-950 border border-border text-xs text-foreground rounded-md px-2 py-1 outline-none focus:border-neon-violet transition-colors cursor-pointer"
@@ -63,6 +63,7 @@
             <option value={0}>Default Auto</option>
             <option value={1}>1 Line</option>
             <option value={2}>2 Lines</option>
+            <option value={3}>3 Lines</option>
             <option value={4}>4 Lines</option>
             <option value={6}>6 Lines</option>
             <option value={8}>8 Lines</option>
