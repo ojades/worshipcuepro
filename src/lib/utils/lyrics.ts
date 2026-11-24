@@ -1,6 +1,18 @@
 // src/lib/utils/lyrics.ts
 import type { Section, Slide } from "$lib/types/models";
 
+const SECTION_COLORS: Record<string, string> = {
+  verse: "#3b82f6", // Blue
+  chorus: "#8b5cf6", // Neon Violet
+  bridge: "#f59e0b", // Amber
+  "pre-chorus": "#06b6d4", // Cyan
+  vamp: "#ec4899", // Pink
+  ending: "#10b981", // Emerald
+  outro: "#10b981", // Emerald
+  tag: "#10b981", // Emerald
+  intro: "#6366f1", // Indigo
+};
+
 export function parseLyrics(
   rawText: string,
   linesPerSlide: number = 0,
@@ -12,10 +24,28 @@ export function parseLyrics(
   let currentText = "";
   let sectionTitle = "Verse 1";
   let sectionType: Section["type"] = "verse";
-  let verseNum = 0;
+
+  // Track counts per section type so duplicate labels auto-number cleanly
+  const typeCounts: Record<string, number> = {
+    verse: 0,
+    chorus: 0,
+    bridge: 0,
+    "pre-chorus": 0,
+    vamp: 0,
+    ending: 0,
+    intro: 0,
+  };
+
+  let hasExplicitHeader = false;
 
   function pushSection() {
     if (!currentText.trim()) return;
+
+    // If the song started without an explicit [Verse] header, count it as Verse 1
+    if (!hasExplicitHeader && typeCounts.verse === 0) {
+      typeCounts.verse = 1;
+      sectionTitle = "Verse 1";
+    }
 
     const sectionSlides: Slide[] = [];
     const manualChunks = currentText.trim().split(/\n\s*\n/);
@@ -39,22 +69,15 @@ export function parseLyrics(
 
     sections.push({
       id: crypto.randomUUID(),
-      title: sectionType === "verse" ? `Verse ${verseNum}` : sectionTitle,
+      title: sectionTitle,
       type: sectionType,
+      color: SECTION_COLORS[sectionType] || "#6366f1",
       slides: sectionSlides,
     });
   }
 
-  // Regex breakdown:
-  // ^\[?         -> Must start at the beginning of the line, optional '['
-  // (verse|chorus|bridge|pre-chorus|pre chorus) -> The exact keywords
-  // \s*          -> Optional whitespace
-  // ([0-9]+)?    -> Optional numbers (e.g., Verse 1, Verse 2)
-  // \]?          -> Optional closing ']'
-  // :?           -> Optional colon (e.g., Chorus:)
-  // $            -> Must be the end of the line (prevents "Bridge is falling down")
   const headerRegex =
-    /^\[?(verse|chorus|bridge|pre-chorus|pre chorus|vamp)\s*([0-9]+)?\]?:?$/i;
+    /^\[?(verse|chorus|bridge|pre-chorus|pre chorus|vamp|ending|outro|tag|intro)\s*([0-9]+)?\]?:?$/i;
 
   lines.forEach((line) => {
     const trimmed = line.trim();
@@ -62,25 +85,45 @@ export function parseLyrics(
 
     if (match) {
       pushSection();
-
-      // match[1] contains the actual keyword found (verse, chorus, etc.)
+      hasExplicitHeader = true;
       const keyword = match[1].toLowerCase();
+      const explicitNum = match[2];
 
       if (keyword === "verse") {
         sectionType = "verse";
-        sectionTitle = "Verse";
-        verseNum++;
+        typeCounts.verse++;
+        sectionTitle = `Verse ${explicitNum || typeCounts.verse}`;
       } else if (keyword === "chorus") {
         sectionType = "chorus";
-        sectionTitle = "Chorus";
+        typeCounts.chorus++;
+        sectionTitle = `Chorus ${explicitNum || typeCounts.chorus}`;
       } else if (keyword === "bridge") {
         sectionType = "bridge";
-        sectionTitle = "Bridge";
+        typeCounts.bridge++;
+        sectionTitle = `Bridge ${explicitNum || typeCounts.bridge}`;
+      } else if (keyword === "vamp") {
+        sectionType = "vamp";
+        typeCounts.vamp++;
+        sectionTitle = `Vamp ${explicitNum || typeCounts.vamp}`;
       } else if (keyword.includes("pre")) {
-        // Catches both "pre-chorus" and "pre chorus"
         sectionType = "pre-chorus";
-        sectionTitle = "Pre-Chorus";
+        typeCounts["pre-chorus"]++;
+        sectionTitle = `Pre-Chorus ${explicitNum || typeCounts["pre-chorus"]}`;
+      } else if (
+        keyword === "ending" ||
+        keyword === "outro" ||
+        keyword === "tag"
+      ) {
+        sectionType = "ending" as Section["type"];
+        typeCounts.ending++;
+        const label = keyword.charAt(0).toUpperCase() + keyword.slice(1);
+        sectionTitle = `${label} ${explicitNum || typeCounts.ending}`;
+      } else if (keyword === "intro") {
+        sectionType = "intro" as Section["type"];
+        typeCounts.intro++;
+        sectionTitle = `Intro ${explicitNum || typeCounts.intro}`;
       }
+
       currentText = "";
     } else {
       currentText += (currentText ? "\n" : "") + line;

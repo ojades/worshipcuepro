@@ -106,10 +106,7 @@
         } else if (checkShortcut(e, SHORTCUTS.PREV_SECTION)) {
             e.preventDefault();
             presentation.prevSection();
-        }
-
-        // --- NEW: Jump to First/Last slide or section ---
-        else if (
+        } else if (
             checkShortcut(e, SHORTCUTS.FIRST_SECTION) ||
             checkShortcut(e, SHORTCUTS.LAST_SECTION) ||
             checkShortcut(e, SHORTCUTS.FIRST_SLIDE_SECTION) ||
@@ -122,7 +119,6 @@
                 let targetSecIndex = 0;
                 let targetSlideIndex = 0;
 
-                // Find index of currently active section
                 let currentSecIndex = cue.sections.findIndex((s: any) =>
                     s.slides.some(
                         (sl: any) => sl.id === presentation.activeSlideId,
@@ -154,10 +150,7 @@
                     );
                 }
             }
-        }
-
-        // 5. Operator View Custom Events
-        else if (checkShortcut(e, SHORTCUTS.QUICK_EDIT)) {
+        } else if (checkShortcut(e, SHORTCUTS.QUICK_EDIT)) {
             e.preventDefault();
             window.dispatchEvent(new CustomEvent("shortcut-quick-edit"));
         } else if (
@@ -166,6 +159,26 @@
         ) {
             e.preventDefault();
             window.dispatchEvent(new CustomEvent("shortcut-verse-jump"));
+        } else if (
+            !e.metaKey &&
+            !e.ctrlKey &&
+            !e.altKey &&
+            e.key >= "1" &&
+            e.key <= "9"
+        ) {
+            const cue: any = presentation.activeCue;
+            if (cue && cue.type !== "bible" && cue.sections?.length) {
+                const targetIndex = parseInt(e.key, 10) - 1;
+                const targetSection = cue.sections[targetIndex];
+                if (targetSection?.slides?.length) {
+                    e.preventDefault();
+                    presentation.fire(
+                        cue,
+                        targetSection.id,
+                        targetSection.slides[0].id,
+                    );
+                }
+            }
         }
     }
 </script>

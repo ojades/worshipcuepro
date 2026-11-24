@@ -1,5 +1,6 @@
 <!-- src/lib/components/layout/cue/SlideGrid.svelte -->
 <script lang="ts">
+    import { onMount } from "svelte";
     import { presentation } from "$lib/state/presentation.svelte";
     import {
         X,
@@ -7,6 +8,7 @@
         Image as ImageIcon,
         Video,
         BookOpen,
+        Search,
     } from "@lucide/svelte";
     import Button from "$lib/components/ui/Button.svelte";
     import { formatShortcut, SHORTCUTS } from "$lib/utils/shortcuts";
@@ -29,6 +31,163 @@
     let scrollContainer: HTMLDivElement | null = $state(null);
     const fetchingSlides = new Set<string>();
 
+    let isBibleCue = $derived(
+        (presentation.activeCue as any)?.type === "bible",
+    );
+
+    // --- IN-CUE LYRIC JUMP STATE ---
+    let isLyricJumping = $state(false);
+    let lyricQuery = $state("");
+    let selectedMatchIndex = $state(0);
+    let lyricInputRef = $state<HTMLInputElement | null>(null);
+
+    function stripHtml(html: string): string {
+        return html
+            .replace(/<[^>]*>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    let matchedSlides = $derived.by(() => {
+        const q = lyricQuery.trim().toLowerCase();
+        if (!isLyricJumping || !q || !presentation.activeCue) return [];
+
+        const matches: { sectionId: string; slideId: string }[] = [];
+        for (const section of presentation.activeCue.sections) {
+            for (const slide of section.slides) {
+                if (
+                    slide.text &&
+                    stripHtml(slide.text).toLowerCase().includes(q)
+                ) {
+                    matches.push({ sectionId: section.id, slideId: slide.id });
+                }
+            }
+        }
+        return matches;
+    });
+
+    let matchedSlideIds = $derived(
+        new Set(matchedSlides.map((m) => m.slideId)),
+    );
+
+    let activeMatchSlideId = $derived(
+        matchedSlides[selectedMatchIndex]?.slideId ?? null,
+    );
+
+    // Reset match index when query changes
+    $effect(() => {
+        lyricQuery;
+        selectedMatchIndex = 0;
+    });
+
+    // Close lyric jump if cue changes
+    $effect(() => {
+        presentation.activeCue?.id;
+        isLyricJumping = false;
+        lyricQuery = "";
+    });
+
+    // Auto-scroll to the highlighted search match
+    $effect(() => {
+        if (isLyricJumping && activeMatchSlideId && scrollContainer) {
+            const el = document.getElementById(`slide-${activeMatchSlideId}`);
+            if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+        }
+    });
+
+    function openLyricJump() {
+        if (isBibleCue || isQuickEditing || !presentation.activeCue) return;
+        isLyricJumping = true;
+        lyricQuery = "";
+        selectedMatchIndex = 0;
+        setTimeout(() => lyricInputRef?.focus(), 30);
+    }
+
+    function closeLyricJump() {
+        isLyricJumping = false;
+        lyricQuery = "";
+        selectedMatchIndex = 0;
+    }
+
+    function handleLyricJumpKeydown(e: KeyboardEvent) {
+        if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
+            if (matchedSlides.length > 0) {
+                e.preventDefault();
+                selectedMatchIndex =
+                    (selectedMatchIndex + 1) % matchedSlides.length;
+            }
+        } else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+            if (matchedSlides.length > 0) {
+                e.preventDefault();
+                selectedMatchIndex =
+                    (selectedMatchIndex - 1 + matchedSlides.length) %
+                    matchedSlides.length;
+            }
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            const target = matchedSlides[selectedMatchIndex];
+            if (target && presentation.activeCue) {
+                presentation.fire(
+                    presentation.activeCue,
+                    target.sectionId,
+                    target.slideId,
+                );
+                closeLyricJump();
+            }
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            closeLyricJump();
+        }
+    }
+
+    onMount(() => {
+        const handleJumpShortcut = () => {
+            if (!isBibleCue && !isQuickEditing && presentation.activeCue) {
+                openLyricJump();
+            }
+        };
+
+        const handleEscape = () => {
+            if (isLyricJumping) closeLyricJump();
+        };
+
+        window.addEventListener("shortcut-verse-jump", handleJumpShortcut);
+        window.addEventListener("shortcut-escape", handleEscape);
+
+        return () => {
+            window.removeEventListener(
+                "shortcut-verse-jump",
+                handleJumpShortcut,
+            );
+            window.removeEventListener("shortcut-escape", handleEscape);
+        };
+    });
+
+    // Fallback color resolver for any sections without an explicit color property
+    function getSectionColor(section: any): string {
+        if (section.color) return section.color;
+        const t = (section.type || section.title || "").toLowerCase();
+        if (t.includes("chorus") && !t.includes("pre")) return "#8b5cf6"; // Neon Violet
+        if (t.includes("pre")) return "#06b6d4"; // Cyan
+        if (t.includes("bridge")) return "#f59e0b"; // Amber
+        if (t.includes("vamp")) return "#ec4899"; // Pink
+        if (t.includes("end") || t.includes("outro") || t.includes("tag"))
+            return "#10b981"; // Emerald
+        if (t.includes("verse")) return "#3b82f6"; // Blue
+        return "#6366f1"; // Indigo default
+    }
+
+    function jumpToSection(section: any) {
+        if (!presentation.activeCue || !section?.slides?.length) return;
+        presentation.fire(
+            presentation.activeCue,
+            section.id,
+            section.slides[0].id,
+        );
+    }
+
     function lazyLoadSlide(
         node: HTMLElement,
         { verseId, text }: { verseId?: string; text: string },
@@ -40,8 +199,6 @@
                 entries.forEach((entry) => {
                     if (entry.isIntersecting && !fetchingSlides.has(verseId)) {
                         fetchingSlides.add(verseId);
-
-                        // Disconnect immediately to prevent re-triggering during array swap
                         observer.disconnect();
 
                         bibleState
@@ -82,7 +239,6 @@
                                             }),
                                         );
 
-                                        // Deep clone array to force Svelte 5 reactivity trigger
                                         const newSections = [
                                             ...presentation.activeCue.sections,
                                         ];
@@ -102,7 +258,7 @@
                     }
                 });
             },
-            { root: null, rootMargin: "300px" }, // root: null correctly uses the viewport boundary even inside nested scrolling
+            { root: null, rootMargin: "300px" },
         );
 
         observer.observe(node);
@@ -113,71 +269,34 @@
         };
     }
 
+    // One-way vertical auto-scroll to active section/slide
     $effect(() => {
         if (
             presentation.activeSlideId &&
             presentation.activeCue &&
-            scrollContainer
+            scrollContainer &&
+            !isLyricJumping
         ) {
             setTimeout(() => {
-                const activeSection = presentation.activeCue?.sections.find(
-                    (section: any) =>
-                        section.slides.some(
-                            (s: any) => s.id === presentation.activeSlideId,
-                        ),
+                const activeSlideElement = document.getElementById(
+                    `slide-${presentation.activeSlideId}`,
                 );
 
-                if (activeSection) {
-                    const activeElement = document.getElementById(
-                        `section-for-${activeSection.id}`,
-                    );
+                if (activeSlideElement && scrollContainer) {
+                    const containerRect =
+                        scrollContainer.getBoundingClientRect();
+                    const slideRect =
+                        activeSlideElement.getBoundingClientRect();
+                    const isVisible =
+                        slideRect.top >= containerRect.top + 16 &&
+                        slideRect.bottom <= containerRect.bottom - 16;
 
-                    if (activeElement && scrollContainer) {
-                        const containerTop =
-                            scrollContainer.getBoundingClientRect().top;
-                        const elementTop =
-                            activeElement.getBoundingClientRect().top;
-                        const offset = elementTop - containerTop;
-                        const isVisible =
-                            offset >= 0 &&
-                            offset <= scrollContainer.clientHeight - 100;
-
-                        if (!isVisible) {
-                            scrollContainer.scrollTo({
-                                top: scrollContainer.scrollTop + offset - 40,
-                                behavior: "smooth",
-                            });
-                        }
-                    }
-
-                    const horizontalContainer = document.getElementById(
-                        `scroll-x-for-${activeSection.id}`,
-                    );
-                    const activeSlideElement = document.getElementById(
-                        `slide-${presentation.activeSlideId}`,
-                    );
-
-                    if (horizontalContainer && activeSlideElement) {
-                        const containerLeft =
-                            horizontalContainer.getBoundingClientRect().left;
-                        const elementLeft =
-                            activeSlideElement.getBoundingClientRect().left;
-                        const offsetLeft = elementLeft - containerLeft;
-
-                        const isVisibleX =
-                            offsetLeft >= 0 &&
-                            offsetLeft + activeSlideElement.offsetWidth <=
-                                horizontalContainer.clientWidth;
-
-                        if (!isVisibleX) {
-                            horizontalContainer.scrollTo({
-                                left:
-                                    horizontalContainer.scrollLeft +
-                                    offsetLeft -
-                                    40,
-                                behavior: "smooth",
-                            });
-                        }
+                    if (!isVisible) {
+                        const offset = slideRect.top - containerRect.top;
+                        scrollContainer.scrollTo({
+                            top: scrollContainer.scrollTop + offset - 72,
+                            behavior: "smooth",
+                        });
                     }
                 }
             }, 10);
@@ -188,7 +307,7 @@
 {#if presentation.activeCue}
     <div class="flex flex-col h-full">
         {#if isQuickEditing}
-            <!-- Quick Edit Pane (Unchanged) -->
+            <!-- Quick Edit Pane -->
             <div
                 class="flex-1 flex flex-col gap-3 min-h-[300px] animate-in fade-in slide-in-from-top-2 duration-200"
             >
@@ -203,16 +322,18 @@
                             variant="ghost"
                             icon={X}
                             onclick={onCancelEdit}
-                            title="({formatShortcut(SHORTCUTS.ESCAPE)}}"
-                            >Cancel</Button
+                            title="({formatShortcut(SHORTCUTS.ESCAPE)})"
                         >
+                            Cancel
+                        </Button>
                         <Button
                             variant="primary"
                             icon={Save}
                             onclick={onSaveEdit}
-                            title="({formatShortcut(SHORTCUTS.SAVE_EDIT)}}"
-                            >Save & Update</Button
+                            title="({formatShortcut(SHORTCUTS.SAVE_EDIT)})"
                         >
+                            Save & Update
+                        </Button>
                     </div>
                 </div>
                 <textarea
@@ -221,56 +342,203 @@
                     placeholder="Edit text here..."></textarea>
             </div>
         {:else}
-            <!-- Slides Grid -->
+            <!-- IN-CUE LYRIC JUMP BAR (Active when '/' or 'F' is pressed) -->
+            {#if isLyricJumping}
+                <div
+                    class="shrink-0 mb-3 flex items-center gap-3 bg-zinc-900/95 border-2 border-amber-400/80 px-3.5 py-2.5 rounded-xl shadow-[0_0_20px_rgba(251,191,36,0.15)] animate-in fade-in slide-in-from-top-1 duration-150"
+                >
+                    <Search size={18} class="text-amber-400 shrink-0" />
+                    <input
+                        bind:this={lyricInputRef}
+                        bind:value={lyricQuery}
+                        onkeydown={handleLyricJumpKeydown}
+                        type="text"
+                        placeholder="Jump to lyric phrase..."
+                        class="flex-1 bg-transparent text-sm font-semibold text-white placeholder:text-zinc-500 outline-none"
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+
+                    {#if lyricQuery.trim()}
+                        <span
+                            class="text-xs font-mono font-bold px-2 py-0.5 rounded {matchedSlides.length >
+                            0
+                                ? 'bg-amber-400/20 text-amber-300'
+                                : 'bg-red-500/20 text-red-400'}"
+                        >
+                            {matchedSlides.length > 0
+                                ? `${selectedMatchIndex + 1} / ${matchedSlides.length}`
+                                : "No match"}
+                        </span>
+                    {/if}
+
+                    <div
+                        class="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider shrink-0"
+                    >
+                        <kbd
+                            class="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-300"
+                        >
+                            ↑↓
+                        </kbd>
+                        <span>Cycle</span>
+                        <kbd
+                            class="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-300"
+                        >
+                            Enter
+                        </kbd>
+                        <span>Fire</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        onclick={closeLyricJump}
+                        class="p-1 text-zinc-500 hover:text-white rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
+                        title="Close (Esc)"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+            {/if}
+
+            <!-- STICKY SECTION JUMP BAR (Non-Bible Cues) -->
+            {#if !isBibleCue}
+                <div
+                    class="shrink-0 pb-4 mb-2 border-b border-border/60 flex flex-wrap items-center gap-2"
+                >
+                    {#if presentation.activeCue.sections.length > 1}
+                        {#each presentation.activeCue.sections as section, idx (section.id)}
+                            {@const color = getSectionColor(section)}
+                            {@const isActive = section.slides.some(
+                                (s) => s.id === presentation.activeSlideId,
+                            )}
+                            <button
+                                type="button"
+                                onclick={() => jumpToSection(section)}
+                                title={idx < 9
+                                    ? `Press ${idx + 1} to jump to ${section.title}`
+                                    : `Jump to ${section.title}`}
+                                class="group flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border {isActive
+                                    ? 'text-white shadow-sm'
+                                    : 'bg-zinc-900/70 text-zinc-400 border-zinc-800 hover:text-zinc-100 hover:bg-zinc-800/80'}"
+                                style={isActive
+                                    ? `background-color: ${color}25; border-color: ${color}; box-shadow: 0 0 12px ${color}33;`
+                                    : `border-left: 3px solid ${color};`}
+                            >
+                                {#if idx < 9}
+                                    <kbd
+                                        class="px-1.5 py-0.5 text-[10px] font-mono font-bold rounded leading-none {isActive
+                                            ? 'bg-black/40 text-white'
+                                            : 'bg-zinc-800 text-zinc-400 group-hover:text-zinc-200'}"
+                                    >
+                                        {idx + 1}
+                                    </kbd>
+                                {/if}
+                                <span>{section.title}</span>
+                            </button>
+                        {/each}
+                    {/if}
+
+                    <!-- Mouse Trigger for In-Cue Lyric Jump -->
+                    {#if !isLyricJumping}
+                        <button
+                            type="button"
+                            onclick={openLyricJump}
+                            title="Press '/' or 'F' to jump to a lyric"
+                            class="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-zinc-400 bg-zinc-900/70 border border-zinc-800 hover:text-amber-300 hover:border-amber-400/40 hover:bg-zinc-800/80 transition-all cursor-pointer"
+                        >
+                            <Search size={13} />
+                            <span>Find Lyric</span>
+                            <kbd
+                                class="px-1.5 py-0.5 text-[10px] font-mono bg-zinc-800 text-zinc-400 rounded leading-none"
+                            >
+                                /
+                            </kbd>
+                        </button>
+                    {/if}
+                </div>
+            {/if}
+
+            <!-- ONE-WAY VERTICAL SLIDES GRID -->
             <div
                 bind:this={scrollContainer}
-                class="flex-1 overflow-y-auto min-h-0 space-y-6 pb-6 scroll-smooth scrollbar-none"
+                class="flex-1 overflow-y-auto min-h-0 space-y-6 pb-8 pt-2 scroll-smooth custom-scrollbar"
             >
-                <!-- FIX: Added (section.id) -->
-                {#each presentation.activeCue.sections as section (section.id)}
+                {#each presentation.activeCue.sections as section, idx (section.id)}
+                    {@const color = getSectionColor(section)}
                     {@const isActiveSection = section.slides.some(
                         (s) => s.id === presentation.activeSlideId,
                     )}
 
-                    <div
-                        id={`section-for-${section.id}`}
-                        class="space-y-3 transition-opacity duration-200"
-                    >
-                        <div class="flex items-center gap-2 sticky left-0">
+                    <div id={`section-for-${section.id}`} class="space-y-3">
+                        <!-- Sleek Color-Coded Section Header Bar -->
+                        <div class="flex items-center gap-2.5">
                             <div
-                                class="h-4 w-4 rounded-sm shadow-sm"
-                                style="background-color: {section.color ||
-                                    '#4f46e5'}"
+                                class="h-4 w-1.5 rounded-full shrink-0"
+                                style="background-color: {color}; box-shadow: 0 0 8px {color}80;"
                             ></div>
+                            {#if !isBibleCue && idx < 9}
+                                <span
+                                    class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-400 border border-zinc-700/50"
+                                >
+                                    {idx + 1}
+                                </span>
+                            {/if}
                             <h3
-                                class="text-xs font-bold text-muted-foreground uppercase tracking-wider"
+                                class="text-xs font-bold uppercase tracking-wider transition-colors"
+                                style="color: {isActiveSection ? color : ''}"
+                                class:text-muted-foreground={!isActiveSection}
                             >
                                 {section.title}
                             </h3>
+                            <div
+                                class="flex-1 h-px opacity-30"
+                                style="background: linear-gradient(to right, {color}, transparent);"
+                            ></div>
                         </div>
 
+                        <!-- Wrapping Grid (No Horizontal Scrolling) -->
                         <div
-                            id={`scroll-x-for-${section.id}`}
-                            class="flex flex-nowrap overflow-x-auto gap-3 pb-3 scrollbar-none scroll-smooth"
+                            class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3"
                         >
-                            <!-- FIX: Added (slide.id) -->
                             {#each section.slides as slide (slide.id)}
+                                {@const isFiltering =
+                                    isLyricJumping &&
+                                    lyricQuery.trim().length > 0}
+                                {@const isMatch = matchedSlideIds.has(slide.id)}
+                                {@const isSelectedMatch =
+                                    activeMatchSlideId === slide.id}
+                                {@const isLive =
+                                    presentation.activeSlideId === slide.id}
+
                                 <button
                                     id={`slide-${slide.id}`}
                                     use:lazyLoadSlide={{
                                         verseId: slide.verseId,
                                         text: slide.text,
                                     }}
-                                    onclick={() =>
+                                    onclick={() => {
                                         presentation.fire(
                                             presentation.activeCue!,
                                             section.id,
                                             slide.id,
-                                        )}
-                                    class="shrink-0 w-56 h-32 relative flex flex-col items-start justify-start p-4 text-left rounded-xl bg-card border transition-all duration-100 hover:border-neon-cyan/50 hover:bg-neon-violet/10 overflow-hidden {presentation.activeSlideId ===
-                                    slide.id
-                                        ? 'border-neon-cyan ring-1 ring-neon-cyan shadow-[0_0_15px_rgba(34,211,238,0.3)]'
-                                        : 'border-border'}"
+                                        );
+                                        if (isLyricJumping) closeLyricJump();
+                                    }}
+                                    class="w-full h-32 relative flex flex-col items-start justify-start p-3.5 text-left rounded-xl bg-card border transition-all duration-150 hover:border-neon-cyan/50 hover:bg-neon-violet/10 overflow-hidden cursor-pointer {isSelectedMatch
+                                        ? 'border-amber-400 ring-2 ring-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.35)]'
+                                        : isLive
+                                          ? 'border-neon-cyan ring-1 ring-neon-cyan shadow-[0_0_15px_rgba(34,211,238,0.3)]'
+                                          : isFiltering && isMatch
+                                            ? 'border-amber-400/50 bg-amber-400/5'
+                                            : 'border-border'} {isFiltering &&
+                                    !isMatch
+                                        ? 'opacity-25'
+                                        : 'opacity-100'}"
+                                    style="border-top: 2px solid {isSelectedMatch
+                                        ? '#fbbf24'
+                                        : isLive
+                                          ? '#22d3ee'
+                                          : `${color}66`};"
                                 >
                                     {#if slide.media}
                                         <div
@@ -311,11 +579,9 @@
                                         </div>
                                     {/if}
 
-                                    <!-- Text Preview (Strip HTML for thumbnail readability) -->
                                     {#if slide.text && slide.text !== "(Loading...)"}
-                                        <!-- Use {@html} to render Tiptap content correctly -->
                                         <div
-                                            class="relative z-10 w-full text-[15px] font-medium text-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed {slide.media
+                                            class="relative z-10 w-full text-[14px] font-medium text-foreground whitespace-pre-wrap line-clamp-4 leading-relaxed {slide.media
                                                 ? 'text-white font-bold drop-shadow-md'
                                                 : ''}"
                                         >
@@ -323,13 +589,13 @@
                                         </div>
                                     {:else if slide.text === "(Loading...)"}
                                         <span
-                                            class="relative z-10 text-[15px] font-medium animate-pulse text-zinc-600"
+                                            class="relative z-10 text-[14px] font-medium animate-pulse text-zinc-600"
                                         >
                                             (Loading...)
                                         </span>
                                     {:else if !slide.media}
                                         <span
-                                            class="relative z-10 text-[15px] font-medium text-zinc-600"
+                                            class="relative z-10 text-[14px] font-medium text-zinc-600"
                                         >
                                             (Blank Slide)
                                         </span>
